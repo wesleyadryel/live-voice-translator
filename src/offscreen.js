@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS } from "./config.js";
+import { t } from "./i18n.js";
 import { RealtimeTranslator } from "./realtime.js";
 
 const incomingOutput = document.querySelector("#incoming-output");
@@ -27,14 +28,15 @@ const MODES = {
 };
 
 const SUMMARY_SECTION_TITLES = {
-  overview: "Краткое содержание",
-  topics: "Основные темы",
-  decisions: "Принятые решения",
-  tasks: "Задачи",
-  deadlines: "Сроки",
-  owners: "Ответственные",
-  questions: "Открытые вопросы"
+  Russian: ["Краткое содержание", "Основные темы", "Принятые решения", "Задачи", "Дедлайны", "Ответственные", "Открытые вопросы"],
+  English: ["Overview", "Key topics", "Decisions", "Tasks", "Deadlines", "Owners", "Open questions"],
+  Spanish: ["Resumen", "Temas clave", "Decisiones", "Tareas", "Fechas límite", "Responsables", "Preguntas abiertas"],
+  German: ["Überblick", "Wichtige Themen", "Entscheidungen", "Aufgaben", "Fristen", "Verantwortliche", "Offene Fragen"],
+  French: ["Vue d’ensemble", "Sujets clés", "Décisions", "Tâches", "Échéances", "Responsables", "Questions ouvertes"]
 };
+const SUMMARY_KEYS = ["overview", "topics", "decisions", "tasks", "deadlines", "owners", "questions"];
+
+function tr(settings, key, variables) { return t(settings.interfaceLanguage || "en", key, variables); }
 
 function freshState(overrides = {}) {
   return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, reconnectAttempt: 0, ...overrides };
@@ -42,13 +44,13 @@ function freshState(overrides = {}) {
 
 async function storageGet(defaults = {}) {
   const result = await chrome.runtime.sendMessage({ type: "STORAGE_GET", defaults });
-  if (!result?.ok) throw new Error(result?.error || "Не удалось прочитать локальные данные");
+  if (!result?.ok) throw new Error(result?.error || t(activeSettings.interfaceLanguage, "readStorageError"));
   return result.value;
 }
 
 async function storageSet(value) {
   const result = await chrome.runtime.sendMessage({ type: "STORAGE_SET", value });
-  if (!result?.ok) throw new Error(result?.error || "Не удалось сохранить локальные данные");
+  if (!result?.ok) throw new Error(result?.error || t(activeSettings.interfaceLanguage, "writeStorageError"));
 }
 
 function startSpeakerRecording(stream) {
@@ -78,9 +80,9 @@ async function stopSpeakerRecording() {
   });
 }
 
-function addTranscript(speaker, text, language) {
+function addTranscript(speaker, text, language, speakerRole = "") {
   if (!meeting || !text) return;
-  meeting.transcript.push({ speaker, text, language, offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000)) });
+  meeting.transcript.push({ speaker, speakerRole, text, language, offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000)) });
   state.transcriptCount = meeting.transcript.length;
 }
 
@@ -91,33 +93,34 @@ function responseText(payload) {
 
 async function createSummary(settings, currentMeeting) {
   const lines = currentMeeting.transcript.map((item) => `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`).join("\n");
-  if (!lines) return "Недостаточно распознанной речи для конспекта.";
+  if (!lines) return tr(settings, "summaryNoSpeech");
   const configuredSections = { ...DEFAULT_SETTINGS.summarySections, ...(settings.summarySections || {}) };
-  const sections = Object.entries(SUMMARY_SECTION_TITLES).filter(([key]) => configuredSections[key]).map(([, title]) => title);
+  const sectionTitles = SUMMARY_SECTION_TITLES[settings.sourceLanguage] || SUMMARY_SECTION_TITLES.English;
+  const sections = SUMMARY_KEYS.filter((key) => configuredSections[key]).map((key) => sectionTitles[SUMMARY_KEYS.indexOf(key)]);
   if (!sections.length) return "";
-  const detail = settings.summaryDetail === "brief" ? "краткий" : settings.summaryDetail === "detailed" ? "подробный" : "сбалансированный";
+  const detail = settings.summaryDetail === "brief" ? "brief" : settings.summaryDetail === "detailed" ? "detailed" : "balanced";
   const summaryLanguage = settings.sourceLanguage || "Russian";
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-5.6-sol",
-      instructions: `Создай ${detail} конспект встречи на ${summaryLanguage} языке в Markdown. Используй только эти разделы: ${sections.join(", ")}. Не добавляй других разделов и не объединяй выбранные разделы. Не придумывай факты; если для выбранного раздела нет данных, напиши «Не зафиксировано».`,
+      instructions: `Create a ${detail} meeting summary in ${summaryLanguage} as Markdown. Use only these sections: ${sections.join(", ")}. Do not add or merge sections. Do not invent facts; if a selected section has no evidence, state that it was not recorded.`,
       input: lines
     })
   });
-  if (!response.ok) throw new Error(`Не удалось создать конспект: OpenAI ${response.status}`);
-  return responseText(await response.json()) || "Конспект не был сформирован.";
+  if (!response.ok) throw new Error(tr(settings, "summaryFailed", { status: response.status }));
+  return responseText(await response.json()) || tr(settings, "summaryEmpty");
 }
 
 function speakerLabel(rawSpeaker, locale) {
-  return locale === "ru" ? `Спикер ${rawSpeaker}` : `Speaker ${rawSpeaker}`;
+  return t(locale, "speaker", { name: rawSpeaker });
 }
 
 async function diarizeRemoteSpeakers(settings, currentMeeting, audioBlob) {
   if (!settings.speakerDiarization || !audioBlob?.size || !currentMeeting.transcript?.length) return;
   if (audioBlob.size > 24_000_000) {
-    currentMeeting.diarizationError = "Recording was too large to identify participants.";
+    currentMeeting.diarizationError = tr(settings, "diarizationTooLarge");
     return;
   }
   try {
@@ -136,12 +139,12 @@ async function diarizeRemoteSpeakers(settings, currentMeeting, audioBlob) {
     const segments = Array.isArray(payload.segments) ? payload.segments.filter((segment) => segment.text?.trim()) : [];
     if (!segments.length) return;
     const remoteTranscript = segments.map((segment) => ({
-      speaker: speakerLabel(segment.speaker || "A", settings.interfaceLanguage || "en"),
+      speaker: speakerLabel(segment.speaker || "A", settings.interfaceLanguage || "en"), speakerRole: "participant",
       text: segment.text.trim(),
       language: settings.targetLanguage,
       offsetSeconds: Math.max(0, Math.round(Number(segment.start) || 0))
     }));
-    currentMeeting.transcript = currentMeeting.transcript.filter((item) => item.speaker !== "Собеседник").concat(remoteTranscript).sort((left, right) => left.offsetSeconds - right.offsetSeconds);
+    currentMeeting.transcript = currentMeeting.transcript.filter((item) => item.speakerRole !== "participant").concat(remoteTranscript).sort((left, right) => left.offsetSeconds - right.offsetSeconds);
     currentMeeting.speakersDetected = [...new Set(remoteTranscript.map((item) => item.speaker))];
   } catch (error) {
     currentMeeting.diarizationError = error.message;
@@ -155,7 +158,7 @@ async function saveMeeting(settings, currentMeeting, speakerAudio) {
   if (!settings.saveTranscript) record.transcript = [];
   if (MODES[currentMeeting.mode].summary) {
     try { record.summary = await createSummary(settings, currentMeeting); }
-    catch (error) { record.summary = `> Конспект не создан: ${error.message}`; }
+    catch (error) { record.summary = `> ${tr(settings, "summaryNotCreated", { error: error.message })}`; }
   }
   const { meetings = [] } = await storageGet({ meetings: [] });
   const cutoff = finishedAt - Math.max(1, Number(settings.retentionDays) || 30) * 86400000;
@@ -201,7 +204,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   }
   state = freshState({
     phase: reason === "limit" ? "limit" : error ? "error" : "idle",
-    error: error || (reason === "limit" ? `Сеанс остановлен по лимиту ${settings.maxSessionMinutes} мин.` : ""),
+    error: error || (reason === "limit" ? tr(settings, "sessionLimitReached", { minutes: settings.maxSessionMinutes }) : ""),
     durationSeconds,
     transcriptCount: state.transcriptCount
   });
@@ -220,7 +223,7 @@ function translatorOptions(settings, mode, outgoing) {
     to: outgoing ? settings.targetLanguage : settings.sourceLanguage,
     voice: outgoing ? settings.outgoingVoice : settings.incomingVoice,
     verbatim: !mode.audio,
-    onTranscript: (text) => addTranscript(outgoing ? "Вы" : "Собеседник", text, mode.audio ? (outgoing ? settings.targetLanguage : settings.sourceLanguage) : (outgoing ? settings.sourceLanguage : settings.targetLanguage)),
+    onTranscript: (text) => addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (outgoing ? settings.targetLanguage : settings.sourceLanguage) : (outgoing ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant"),
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
     onDisconnect: () => scheduleReconnect(settings, mode)
   };
@@ -251,7 +254,7 @@ function scheduleReconnect(settings, mode) {
       reconnecting = false;
       if (attempt < 5) scheduleReconnect(settings, mode);
       else {
-        await stop({ reason: "connection", error: `Не удалось восстановить связь: ${error.message}`, notify: true });
+        await stop({ reason: "connection", error: tr(settings, "connectionRestoreFailed", { error: error.message }), notify: true });
       }
     }
   }, Math.min(16000, 1000 * 2 ** (attempt - 1)));
@@ -261,10 +264,10 @@ async function start(streamId, suppliedSettings = {}) {
   await stop();
   const settings = { ...DEFAULT_SETTINGS, ...suppliedSettings };
   activeSettings = settings;
-  if (!settings.apiKey) throw new Error("Сначала добавьте OpenAI API-ключ в настройках");
+  if (!settings.apiKey) throw new Error(tr(settings, "addApiKey"));
   const mode = MODES[settings.mode] || MODES.both;
   sessionStartedAt = Date.now();
-  meeting = mode.notes ? { id: crypto.randomUUID(), title: `Встреча ${new Date().toLocaleString("ru-RU")}`, startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
+  meeting = mode.notes ? { id: crypto.randomUUID(), title: tr(settings, "meetingTitle", { date: new Date().toLocaleString(settings.interfaceLanguage || "en") }), startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
   state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
     microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -295,7 +298,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true, state });
     return false;
   }
-  const action = message.type === "START_TRANSLATION" ? start(message.streamId, message.settings) : message.type === "STOP_TRANSLATION" ? stop() : Promise.resolve({ ok: false, error: "Unknown command" });
+  const action = message.type === "START_TRANSLATION" ? start(message.streamId, message.settings) : message.type === "STOP_TRANSLATION" ? stop() : Promise.resolve({ ok: false, error: t(activeSettings.interfaceLanguage, "unknownCommand") });
   action.then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });

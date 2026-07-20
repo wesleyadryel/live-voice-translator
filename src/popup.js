@@ -1,5 +1,5 @@
 import { loadSettings, maskKey, saveSettings } from "./config.js";
-import { localizePage, t } from "./i18n.js";
+import { languageName, localizePage, t } from "./i18n.js";
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -23,13 +23,13 @@ const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnec
 const START_LABELS = { translation: "startTranslation", notes: "startNotes", both: "startMeeting", transcript: "startTranscript" };
 
 function friendlyError(error) {
-  const message = error?.message || String(error || "Неизвестная ошибка");
+  const message = error?.message || String(error || t(locale, "unknownError"));
   if (/Permission dismissed|Permission denied|NotAllowedError/i.test(message)) return t(locale, "permission");
   if (/OpenAI 401|invalid.*key|Incorrect API key/i.test(message)) return t(locale, "keyError");
   if (/OpenAI 429|quota|rate limit/i.test(message)) return t(locale, "quota");
-  if (/Requested device not found|NotFoundError/i.test(message)) return "Выбранное аудиоустройство отключено. Выберите доступный выход.";
-  if (/Cannot capture|tabCapture|active tab/i.test(message)) return "Откройте вкладку конференции и запустите перевод из неё.";
-  if (/virtual|аудиокабель|разными устройствами/i.test(message)) return message;
+  if (/Requested device not found|NotFoundError/i.test(message)) return t(locale, "deviceMissing");
+  if (/Cannot capture|tabCapture|active tab/i.test(message)) return t(locale, "conferenceTab");
+  if (/virtual|аудиокабель|different devices|Conference mode/i.test(message)) return message.includes("different") || message.includes("разными") ? t(locale, "differentOutputs") : t(locale, "conferenceCable");
   if (/network|fetch|connection/i.test(message)) return t(locale, "network");
   return message;
 }
@@ -42,13 +42,7 @@ function formatDuration(totalSeconds) {
   return hours ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}` : `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-function languageLabel(value) {
-  const names = {
-    ru: { Russian: "Русский", English: "Английский", Spanish: "Испанский", German: "Немецкий", French: "Французский" },
-    en: { Russian: "Russian", English: "English", Spanish: "Spanish", German: "German", French: "French" }
-  };
-  return (names[locale] || names.en)[value] || value;
-}
+function languageLabel(value) { return languageName(locale, value); }
 
 async function microphonePermission() {
   try { return (await navigator.permissions.query({ name: "microphone" })).state; }
@@ -102,6 +96,7 @@ async function refresh() {
   currentSettings = settings;
   locale = settings.interfaceLanguage || "en";
   localizePage(locale);
+  document.title = t(locale, "appTitle");
   currentMode = settings.mode;
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
   elements.interfaceLanguage.value = locale;
@@ -124,8 +119,8 @@ async function listOutputs(settings) {
     stream.getTracks().forEach((track) => track.stop());
     const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audiooutput");
     for (const [element, selected] of [[elements.outgoingDevice, settings.outgoingDeviceId], [elements.incomingDevice, settings.incomingDeviceId]]) {
-      element.replaceChildren(new Option("System output", "default"));
-      outputs.forEach((device, index) => element.add(new Option(device.label || `Audio output ${index + 1}`, device.deviceId)));
+      element.replaceChildren(new Option(t(locale, "systemOutput"), "default"));
+      outputs.forEach((device, index) => element.add(new Option(device.label || t(locale, "audioOutput", { number: index + 1 }), device.deviceId)));
       element.value = [...element.options].some((option) => option.value === selected) ? selected : "default";
     }
   } catch {
@@ -142,7 +137,7 @@ elements.toggle.addEventListener("click", async () => {
   try {
     if (active) {
       const result = await chrome.runtime.sendMessage({ type: "STOP_TRANSLATION" });
-      if (!result?.ok) throw new Error(result?.error || "Не удалось остановить сеанс");
+      if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
       currentState = result.state;
       if (result.meetingId) await chrome.tabs.create({ url: `${chrome.runtime.getURL("src/history.html")}#${result.meetingId}` });
     } else {
@@ -153,7 +148,7 @@ elements.toggle.addEventListener("click", async () => {
       }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const result = await chrome.runtime.sendMessage({ type: "START_TRANSLATION", tabId: tab.id });
-      if (!result?.ok) throw new Error(result?.error || "Не удалось запустить сеанс");
+      if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
       currentState = result.state;
     }
   } catch (error) {

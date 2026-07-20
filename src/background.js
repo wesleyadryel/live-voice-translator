@@ -1,11 +1,19 @@
+import { t } from "./i18n.js";
+
 let offscreenCreating;
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
+async function currentLocale() {
+  const { interfaceLanguage = "en" } = await chrome.storage.local.get({ interfaceLanguage: "en" });
+  return interfaceLanguage;
+}
+
 async function setActionState(active, error = false) {
+  const locale = await currentLocale();
   await chrome.action.setBadgeBackgroundColor({ color: error ? "#d95c5c" : "#3bd879" });
   await chrome.action.setBadgeText({ text: error ? "!" : active ? "ON" : "" });
-  await chrome.action.setTitle({ title: error ? "Live Voice Translator — ошибка" : active ? "Live Voice Translator — перевод включён" : "Live Voice Translator" });
+  await chrome.action.setTitle({ title: error ? `${t(locale, "appTitle")} — ${t(locale, "error")}` : active ? `${t(locale, "appTitle")} — ${t(locale, "live")}` : t(locale, "appTitle") });
 }
 
 async function ensureOffscreenDocument() {
@@ -47,8 +55,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "TEST_API_KEY") {
     (async () => {
-      const { apiKey = "" } = await chrome.storage.local.get({ apiKey: "" });
-      if (!apiKey) throw new Error("API-ключ не указан");
+      const { apiKey = "", interfaceLanguage = "en" } = await chrome.storage.local.get({ apiKey: "", interfaceLanguage: "en" });
+      if (!apiKey) throw new Error(t(interfaceLanguage, "apiKeyMissing"));
       const response = await fetch("https://api.openai.com/v1/models/gpt-realtime-1.5", {
         headers: { Authorization: `Bearer ${apiKey}` }
       });
@@ -62,11 +70,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       await ensureOffscreenDocument();
       const settings = await chrome.storage.local.get();
+      const locale = settings.interfaceLanguage || "en";
       if (["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
-        throw new Error("Для режима «Конференция» выберите виртуальный аудиокабель в настройках");
+        throw new Error(t(locale, "conferenceCable"));
       }
       if (["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && settings.outgoingDeviceId === settings.incomingDeviceId) {
-        throw new Error("Выход собеседнику и выход для вас должны быть разными устройствами");
+        throw new Error(t(locale, "differentOutputs"));
       }
       const streamId = await chrome.tabCapture.getMediaStreamId({
         targetTabId: message.tabId

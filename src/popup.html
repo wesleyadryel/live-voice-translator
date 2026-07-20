@@ -13,7 +13,7 @@
     <header class="mac-toolbar">
       <div class="app-identity"><small>LIVE VOICE</small><strong data-i18n="session">Meeting interpreter</strong></div>
       <div class="toolbar-actions">
-        <select id="interface-language" class="interface-language" aria-label="Interface language"><option value="en">EN</option><option value="ru">RU</option><option value="es">ES</option><option value="de">DE</option><option value="fr">FR</option></select>
+        <select id="interface-language" class="interface-language" aria-label="Interface language" data-i18n-aria="interfaceLanguage"><option value="en">EN</option><option value="ru">RU</option><option value="es">ES</option><option value="de">DE</option><option value="fr">FR</option></select>
         <button class="toolbar-text-button" id="open-history" data-i18n="history">History</button>
         <button class="toolbar-button" id="open-settings" aria-label="Settings" data-i18n-title="settings" data-i18n-aria="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l2-1.6-2-3.4-2.5 1a8 8 0 0 0-2.6-1.5L14 2.4h-4L9.6 5a8 8 0 0 0-2.6 1.5l-2.5-1-2 3.4 2 1.6a7.8 7.8 0 0 0 0 3l-2 1.6 2 3.4 2.5-1A8 8 0 0 0 9.6 19l.4 2.6h4l.4-2.6a8 8 0 0 0 2.6-1.5l2.5 1 2-3.4-2.1-1.6Z"/></svg></button>
       </div>
@@ -29,18 +29,18 @@
 
     <section class="control-section mode-section">
       <div class="section-label"><span data-i18n="mode">Mode</span></div>
-      <nav class="mac-segmented" aria-label="Mode"><button data-mode="translation" data-i18n="translation">Translate</button><button data-mode="notes" data-i18n="notes">Notes</button><button data-mode="both" data-i18n="both">Both</button><button data-mode="transcript" data-i18n="transcript">Text</button></nav>
+      <nav class="mac-segmented" aria-label="Mode" data-i18n-aria="mode"><button data-mode="translation" data-i18n="translation">Translate</button><button data-mode="notes" data-i18n="notes">Notes</button><button data-mode="both" data-i18n="both">Both</button><button data-mode="transcript" data-i18n="transcript">Text</button></nav>
       <p class="mode-help" id="mode-help">Translate the conversation aloud without saving text.</p>
     </section>
 
-    <section class="quick-settings" aria-label="Meeting settings">
-      <div class="quick-setting"><label for="source-language" data-i18n="youSpeak">You speak</label><select id="source-language"><option value="Russian">Russian</option><option value="English">English</option><option value="Spanish">Español</option><option value="German">Deutsch</option><option value="French">Français</option></select></div>
-      <div class="quick-setting"><label for="target-language" data-i18n="participantLanguage">Participant</label><select id="target-language"><option value="English">English</option><option value="Russian">Russian</option><option value="Spanish">Español</option><option value="German">Deutsch</option><option value="French">Français</option></select></div>
-      <div class="quick-setting"><label for="outgoing-device" data-i18n="outputParticipant">To meeting</label><select id="outgoing-device"><option value="default">System output</option></select></div>
-      <div class="quick-setting"><label for="incoming-device" data-i18n="outputYou">For you</label><select id="incoming-device"><option value="default">System output</option></select></div>
+    <section class="quick-settings" aria-label="Meeting settings" data-i18n-aria="settingsTitle">
+      <div class="quick-setting"><label for="source-language" data-i18n="youSpeak">You speak</label><select id="source-language"><option value="Russian" data-i18n="languageRussian">Russian</option><option value="English" data-i18n="languageEnglish">English</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option></select></div>
+      <div class="quick-setting"><label for="target-language" data-i18n="participantLanguage">Participant</label><select id="target-language"><option value="English" data-i18n="languageEnglish">English</option><option value="Russian" data-i18n="languageRussian">Russian</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option></select></div>
+      <div class="quick-setting"><label for="outgoing-device" data-i18n="outputParticipant">To meeting</label><select id="outgoing-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
+      <div class="quick-setting"><label for="incoming-device" data-i18n="outputYou">For you</label><select id="incoming-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
     </section>
 
-    <section class="preflight" aria-label="System readiness"><div data-check="api"><i></i><span>OpenAI</span><small>Checking</small></div><div data-check="microphone"><i></i><span data-i18n="microphone">Microphone</span><small>Checking</small></div><div data-check="route"><i></i><span data-i18n="route">Route</span><small>Checking</small></div></section>
+    <section class="preflight" aria-label="System readiness" data-i18n-aria="settingsTitle"><div data-check="api"><i></i><span>OpenAI</span><small data-i18n="connecting">Connecting</small></div><div data-check="microphone"><i></i><span data-i18n="microphone">Microphone</span><small data-i18n="connecting">Connecting</small></div><div data-check="route"><i></i><span data-i18n="route">Route</span><small data-i18n="connecting">Connecting</small></div></section>
     <div class="notice" id="recording-notice" hidden><p data-i18n="notice">In note modes, audio is sent to OpenAI. History stays local.</p><button id="accept-notice" data-i18n="understood">Got it</button></div>
     <div class="error-callout" id="error" role="alert" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3.5v.1M10.3 3.6 2.5 17.1A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.9L13.7 3.6a2 2 0 0 0-3.4 0Z"/></svg><span id="error-copy"></span><button id="error-settings" data-i18n="fix">Fix</button></div>
     <button class="session-button" id="toggle"><span class="button-symbol"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z"/></svg></span><span id="toggle-label">Start translation</span><span class="button-progress" aria-hidden="true"></span></button>

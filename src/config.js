@@ -39,6 +39,6 @@ export async function saveSettings(next) {
 }
 
 export function maskKey(value) {
-  if (!value) return "Не настроен";
+  if (!value) return "";
   return `${value.slice(0, 7)}••••••••${value.slice(-4)}`;
 }

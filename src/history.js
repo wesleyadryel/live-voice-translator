@@ -19,9 +19,9 @@ function markdownToHtml(markdown = "") {
 
 function meetingMarkdown(meeting) {
   const transcript = meeting.transcript?.length
-    ? `\n\n## Полный текст\n\n${meeting.transcript.map((item) => `- [${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] **${item.speaker}:** ${item.text}`).join("\n")}`
+    ? `\n\n## ${t(locale, "fullTranscript")}\n\n${meeting.transcript.map((item) => `- [${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] **${item.speaker}:** ${item.text}`).join("\n")}`
     : "";
-  return `# ${meeting.title}\n\n${meeting.summary || "Конспект не создавался."}${transcript}`;
+  return `# ${meeting.title}\n\n${meeting.summary || t(locale, "meetingNotCreated")}${transcript}`;
 }
 
 function download(meeting) {
@@ -37,10 +37,10 @@ function showMeeting(id) {
   const meeting = meetings.find((item) => item.id === id);
   if (!meeting) return;
   document.querySelectorAll(".meeting-item").forEach((item) => item.classList.toggle("active", item.dataset.id === id));
-  const duration = `${Math.floor(meeting.durationSeconds / 60)} мин`;
+  const duration = t(locale, "duration", { minutes: Math.floor(meeting.durationSeconds / 60) });
   document.querySelector("#meeting-view").innerHTML = `
     <header class="meeting-head"><h1>${escapeHtml(meeting.title)}</h1><p>${new Date(meeting.startedAt).toLocaleString(locale)} · ${duration}</p><div class="meeting-actions"><button id="copy-meeting">${t(locale, "copy")}</button><button id="download-meeting">${t(locale, "download")}</button><button class="delete-meeting" id="delete-meeting">${t(locale, "delete")}</button></div></header>
-    <section class="summary">${markdownToHtml(meeting.summary || "Конспект не создавался.")}</section>
+    <section class="summary">${markdownToHtml(meeting.summary || t(locale, "meetingNotCreated"))}</section>
     ${meeting.transcript?.length ? `<section class="transcript"><h2>${t(locale, "fullTranscript")}</h2>${meeting.transcript.map((item) => `<div class="transcript-row"><time>${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}</time><strong>${escapeHtml(item.speaker)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}</section>` : ""}`;
   document.querySelector("#copy-meeting").onclick = () => navigator.clipboard.writeText(meetingMarkdown(meeting));
   document.querySelector("#download-meeting").onclick = () => download(meeting);
@@ -60,10 +60,10 @@ async function render() {
   const settings = await chrome.storage.local.get({ meetings: [], interfaceLanguage: "en" });
   meetings = settings.meetings;
   locale = settings.interfaceLanguage || "en";
-  document.title = t(locale, "historyTitle");
+  document.title = `${t(locale, "historyTitle")} — ${t(locale, "appTitle")}`;
   localizePage(locale);
   const list = document.querySelector("#history-list");
-  list.innerHTML = meetings.map((meeting) => `<button class="meeting-item" data-id="${meeting.id}"><strong>${escapeHtml(meeting.title)}</strong><small>${new Date(meeting.startedAt).toLocaleDateString(locale)} · ${Math.floor(meeting.durationSeconds / 60)} min</small></button>`).join("");
+  list.innerHTML = meetings.map((meeting) => `<button class="meeting-item" data-id="${meeting.id}"><strong>${escapeHtml(meeting.title)}</strong><small>${new Date(meeting.startedAt).toLocaleDateString(locale)} · ${t(locale, "duration", { minutes: Math.floor(meeting.durationSeconds / 60) })}</small></button>`).join("");
   list.querySelectorAll(".meeting-item").forEach((item) => item.onclick = () => showMeeting(item.dataset.id));
   const requestedId = location.hash.slice(1);
   if (meetings[0]) showMeeting(meetings.some((item) => item.id === requestedId) ? requestedId : meetings[0].id);

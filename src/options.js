@@ -3,6 +3,14 @@ import { localizePage, t } from "./i18n.js";
 
 const ids = (name) => document.querySelector(`#${name}`);
 const SUMMARY_SECTION_IDS = ["overview", "topics", "decisions", "tasks", "deadlines", "owners", "questions"];
+let locale = "en";
+
+function applyLocale(nextLocale) {
+  locale = nextLocale || "en";
+  localizePage(locale);
+  document.title = `${t(locale, "settingsTitle")} — ${t(locale, "appTitle")}`;
+  ids("reveal-key").textContent = t(locale, ids("api-key").type === "password" ? "show" : "hide");
+}
 
 async function listOutputs(selectedOutgoing, selectedIncoming) {
   try {
@@ -14,22 +22,21 @@ async function listOutputs(selectedOutgoing, selectedIncoming) {
       for (const device of devices) {
         const option = document.createElement("option");
         option.value = device.deviceId;
-        option.textContent = device.label || `Аудиовыход ${select.length}`;
+        option.textContent = device.label || t(locale, "audioOutput", { number: select.length });
         option.selected = device.deviceId === selected;
         select.append(option);
       }
     }
   } catch {
-    ids("save-status").textContent = "Разрешите доступ к микрофону, чтобы увидеть аудиоустройства";
+    ids("save-status").textContent = t(locale, "audioPermission");
   }
 }
 
 async function init() {
   const settings = await loadSettings();
-  localizePage(settings.interfaceLanguage || "ru");
-  document.title = t(settings.interfaceLanguage || "ru", "settings");
+  applyLocale(settings.interfaceLanguage || "en");
   ids("api-key").value = settings.apiKey;
-  ids("interface-language").value = settings.interfaceLanguage || "ru";
+  ids("interface-language").value = settings.interfaceLanguage || "en";
   ids("source-language").value = settings.sourceLanguage;
   ids("target-language").value = settings.targetLanguage;
   ids("outgoing-voice").value = settings.outgoingVoice;
@@ -48,27 +55,27 @@ async function init() {
 ids("reveal-key").addEventListener("click", () => {
   const input = ids("api-key");
   input.type = input.type === "password" ? "text" : "password";
-  ids("reveal-key").textContent = input.type === "password" ? "Показать" : "Скрыть";
+  ids("reveal-key").textContent = t(locale, input.type === "password" ? "show" : "hide");
 });
 
 ids("interface-language").addEventListener("change", () => {
-  localizePage(ids("interface-language").value);
+  applyLocale(ids("interface-language").value);
 });
 
 ids("test-key").addEventListener("click", async () => {
   const button = ids("test-key");
   const status = ids("api-test-status");
   const apiKey = ids("api-key").value.trim();
-  if (!apiKey) { status.textContent = "Введите ключ"; return; }
+  if (!apiKey) { status.textContent = t(locale, "enterKey"); return; }
   button.disabled = true;
-  status.textContent = "Проверяем…";
+  status.textContent = t(locale, "testing");
   try {
     await saveSettings({ apiKey });
     const result = await chrome.runtime.sendMessage({ type: "TEST_API_KEY" });
-    if (!result?.ok) throw new Error(result?.error || "Проверка не прошла");
-    status.textContent = "OpenAI доступен";
+    if (!result?.ok) throw new Error(result?.error || t(locale, "checkFailed"));
+    status.textContent = t(locale, "accessible");
   } catch (error) {
-    status.textContent = `Ошибка: ${error.message}`;
+    status.textContent = `${t(locale, "error")}: ${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -78,7 +85,7 @@ ids("settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const apiKey = ids("api-key").value.trim();
   if (apiKey && !apiKey.startsWith("sk-")) {
-    ids("save-status").textContent = "Ключ должен начинаться с sk-";
+    ids("save-status").textContent = t(locale, "keyFormat");
     return;
   }
   await saveSettings({
@@ -98,8 +105,8 @@ ids("settings-form").addEventListener("submit", async (event) => {
     retentionDays: Number(ids("retention-days").value),
     maxSessionMinutes: Number(ids("max-session-minutes").value)
   });
-  localizePage(ids("interface-language").value);
-  ids("save-status").textContent = t(ids("interface-language").value, "saved");
+  applyLocale(ids("interface-language").value);
+  ids("save-status").textContent = t(locale, "saved");
   setTimeout(() => { ids("save-status").textContent = ""; }, 1800);
 });
 
