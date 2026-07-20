@@ -1,3 +1,118 @@
+.options-shell .settings {
+  width: min(980px, calc(100% - 48px));
+  padding: 28px 0 40px;
+}
+
+.options-shell .settings > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 36px;
+  padding-bottom: 20px;
+}
+
+.options-shell .settings > header p {
+  max-width: 430px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.compact-settings-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 34px;
+}
+
+.compact-settings-form > section {
+  min-width: 0;
+  padding: 18px 0;
+}
+
+.compact-settings-form .language-section,
+.compact-settings-form .api-section,
+.compact-settings-form .notes-section,
+.compact-settings-form .form-actions {
+  grid-column: 1 / -1;
+}
+
+.compact-settings-form h2 {
+  margin-bottom: 12px;
+  font-size: 10px;
+}
+
+.compact-settings-form label {
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.compact-settings-form input,
+.compact-settings-form select {
+  min-height: 36px;
+  margin-top: 5px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.compact-settings-form .secondary-button {
+  min-height: 36px;
+  margin-top: 5px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.compact-settings-form .input-row input { margin-top: 5px; }
+.compact-settings-form .help { margin-top: 7px; font-size: 10px; }
+.compact-settings-form .two-column { gap: 24px; }
+.compact-settings-form .two-column > div:first-child { padding-right: 24px; }
+.compact-settings-form .summary-options { margin-top: 12px; padding: 10px 0; }
+.compact-settings-form .summary-options p { margin-bottom: 0; font-size: 10px; }
+.compact-settings-form .check-row { margin-top: 8px; }
+.compact-settings-form .check-row input { min-height: 16px; padding: 0; }
+.compact-settings-form .form-actions { padding-top: 18px; }
+.compact-settings-form .primary-button { min-height: 42px; }
+
+@media (min-width: 761px) {
+  .compact-settings-form .language-section,
+  .compact-settings-form .api-section {
+    grid-column: auto;
+  }
+
+  .compact-settings-form .language-section,
+  .compact-settings-form .api-section {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  .compact-settings-form .api-section .help {
+    display: none;
+  }
+
+  .compact-settings-form .notes-section {
+    padding-top: 14px;
+  }
+
+  .compact-settings-form .notes-section > label:not(.check-row) {
+    display: inline-block;
+    width: calc(33.333% - 10px);
+    margin-right: 10px;
+    vertical-align: top;
+  }
+}
+
+@media (max-width: 760px) {
+  .options-shell .settings { width: min(100% - 28px, 640px); padding-top: 22px; }
+  .options-shell .settings > header { display: block; }
+  .options-shell .settings > header p { margin-top: 14px; }
+  .compact-settings-form { grid-template-columns: 1fr; }
+  .compact-settings-form > section,
+  .compact-settings-form .language-section,
+  .compact-settings-form .api-section,
+  .compact-settings-form .notes-section,
+  .compact-settings-form .form-actions { grid-column: 1; }
+}
+
 .summary-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

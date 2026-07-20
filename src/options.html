@@ -15,29 +15,29 @@
       <div class="brand-row"><div class="brand-mark"><span></span><span></span><span></span></div><div><strong>Live Voice</strong><small>Настройки перевода</small></div></div>
       <p>Ключ остаётся только на этом устройстве и используется для прямого подключения к OpenAI.</p>
     </header>
-    <form id="settings-form">
-      <section>
+    <form id="settings-form" class="compact-settings-form">
+      <section class="language-section">
         <h2 data-i18n="interfaceLanguage">Язык интерфейса</h2>
         <label><select id="interface-language"><option value="ru">Русский</option><option value="en">English</option><option value="es">Español</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label>
       </section>
-      <section>
+      <section class="api-section">
         <h2>OpenAI API</h2>
         <label>API-ключ<div class="input-row"><input id="api-key" type="password" autocomplete="off" placeholder="sk-proj-…"><button type="button" class="secondary-button" id="reveal-key">Показать</button></div></label>
         <div class="input-row"><button type="button" class="secondary-button" id="test-key">Проверить подключение</button><span id="api-test-status" aria-live="polite"></span></div>
         <p class="help">Создайте отдельный ключ и задайте лимит расходов в кабинете OpenAI.</p>
       </section>
-      <section class="two-column">
+      <section class="two-column voice-section">
         <div><h2>Вы говорите</h2><label>Язык<select id="source-language"><option value="Russian">Русский</option><option value="English">English</option><option value="Spanish">Español</option><option value="German">Deutsch</option><option value="French">Français</option></select></label><label>Голос собеседнику<select id="outgoing-voice"><option value="marin">Marin</option><option value="cedar">Cedar</option><option value="alloy">Alloy</option><option value="verse">Verse</option></select></label></div>
         <div><h2>Вы слышите</h2><label>Язык собеседника<select id="target-language"><option value="English">English</option><option value="Russian">Русский</option><option value="Spanish">Español</option><option value="German">Deutsch</option><option value="French">Français</option></select></label><label>Русский голос вам<select id="incoming-voice"><option value="cedar">Cedar</option><option value="marin">Marin</option><option value="alloy">Alloy</option><option value="verse">Verse</option></select></label></div>
       </section>
-      <section>
+      <section class="audio-section">
         <h2>Аудиовыходы</h2>
         <label>Перевод для собеседника<select id="outgoing-device"><option value="default">Системный выход</option></select></label>
         <label>Перевод для вас<select id="incoming-device"><option value="default">Системный выход</option></select></label>
         <label>Слышать собственный перевод<select id="monitor-level"><option value="off">Не слышать</option><option value="quiet">Тихо, для контроля</option><option value="full">Полностью</option></select></label>
         <p class="help">Для исходящего перевода выберите виртуальный аудиокабель, а его же укажите микрофоном в конференции.</p>
       </section>
-      <section>
+      <section class="notes-section">
         <h2>Конспект встречи</h2>
         <label>Подробность<select id="summary-detail"><option value="brief">Краткий</option><option value="standard">Стандартный</option><option value="detailed">Подробный</option></select></label>
         <div class="summary-options" role="group" aria-label="Summary sections">
