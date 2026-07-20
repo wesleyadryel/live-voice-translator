@@ -1,0 +1,34 @@
+.status-block { margin-top: 42px; }
+.mode-switch {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin-top: 25px;
+  padding: 3px;
+  border: 1px solid #242a26;
+  border-radius: 12px;
+  background: #141815;
+}
+.mode-switch button {
+  padding: 8px 3px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #778079;
+  font-size: 10px;
+  cursor: pointer;
+}
+.mode-switch button.active { background: #29312b; color: var(--accent); }
+.is-live .mode-switch { pointer-events: none; opacity: .55; }
+.wave { height: 54px; margin: 10px 0; }
+.popup footer button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7d8880;
+  font-size: 10px;
+  cursor: pointer;
+}
+.popup footer button:hover { color: var(--accent); }
+.check-row { display: flex; align-items: center; gap: 10px; }
+.check-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }

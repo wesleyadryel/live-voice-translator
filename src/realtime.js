@@ -1,7 +1,7 @@
 const REALTIME_URL = "https://api.openai.com/v1/realtime/calls";
 
 export class RealtimeTranslator {
-  constructor({ apiKey, inputStream, outputElement, from, to, voice, onState }) {
+  constructor({ apiKey, inputStream, outputElement, from, to, voice, onState, onTranscript, verbatim = false }) {
     this.apiKey = apiKey;
     this.inputStream = inputStream;
     this.outputElement = outputElement;
@@ -9,6 +9,9 @@ export class RealtimeTranslator {
     this.to = to;
     this.voice = voice;
     this.onState = onState || (() => {});
+    this.onTranscript = onTranscript || (() => {});
+    this.verbatim = verbatim;
+    this.transcriptBuffer = "";
     this.pc = null;
     this.dataChannel = null;
   }
@@ -34,6 +37,19 @@ export class RealtimeTranslator {
 
     const dc = pc.createDataChannel("oai-events");
     this.dataChannel = dc;
+    dc.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data);
+        if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
+          this.transcriptBuffer += event.delta || "";
+        }
+        if (event.type === "response.output_audio_transcript.done" || event.type === "response.audio_transcript.done") {
+          const transcript = (event.transcript || this.transcriptBuffer).trim();
+          this.transcriptBuffer = "";
+          if (transcript) this.onTranscript(transcript);
+        }
+      } catch {}
+    };
     dc.onopen = () => {
       dc.send(JSON.stringify({
         type: "session.update",
@@ -52,12 +68,14 @@ export class RealtimeTranslator {
             },
             output: { voice: this.voice }
           },
-          instructions: [
-            `Act only as a simultaneous interpreter from ${this.from} to ${this.to}.`,
-            `Translate every spoken utterance naturally into ${this.to}.`,
-            "Output only the translation as speech. Never answer questions or add commentary.",
-            "Keep names, numbers, product terms, and tone accurate. Be concise to minimize latency."
-          ].join(" ")
+          instructions: this.verbatim
+            ? `Repeat every spoken utterance verbatim in ${this.from}. Output only the exact spoken words as speech. Never answer, summarize, or add commentary.`
+            : [
+                `Act only as a simultaneous interpreter from ${this.from} to ${this.to}.`,
+                `Translate every spoken utterance naturally into ${this.to}.`,
+                "Output only the translation as speech. Never answer questions or add commentary.",
+                "Keep names, numbers, product terms, and tone accurate. Be concise to minimize latency."
+              ].join(" ")
         }
       }));
     };

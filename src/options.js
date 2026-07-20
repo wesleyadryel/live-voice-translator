@@ -29,6 +29,8 @@ async function init() {
   ids("target-language").value = settings.targetLanguage;
   ids("outgoing-voice").value = settings.outgoingVoice;
   ids("incoming-voice").value = settings.incomingVoice;
+  ids("summary-detail").value = settings.summaryDetail;
+  ids("save-transcript").checked = settings.saveTranscript;
   await listOutputs(settings.outgoingDeviceId, settings.incomingDeviceId);
 }
 
@@ -51,6 +53,8 @@ ids("settings-form").addEventListener("submit", async (event) => {
     targetLanguage: ids("target-language").value,
     outgoingVoice: ids("outgoing-voice").value,
     incomingVoice: ids("incoming-voice").value,
+    summaryDetail: ids("summary-detail").value,
+    saveTranscript: ids("save-transcript").checked,
     outgoingDeviceId: ids("outgoing-device").value,
     incomingDeviceId: ids("incoming-device").value
   });

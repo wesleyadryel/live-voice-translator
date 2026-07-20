@@ -1,4 +1,4 @@
-import { loadSettings, maskKey } from "./config.js";
+import { loadSettings, maskKey, saveSettings } from "./config.js";
 
 const elements = {
   toggle: document.querySelector("#toggle"),
@@ -11,6 +11,14 @@ const elements = {
   target: document.querySelector("#target-label")
 };
 let active = false;
+let currentMode = "both";
+
+const MODE_HINTS = {
+  translation: "Двусторонний голосовой перевод без сохранения встречи.",
+  notes: "Запишем разговор и подготовим русский конспект.",
+  both: "Голосовой перевод и конспект после завершения.",
+  transcript: "Сохраним полный текст без перевода голоса."
+};
 
 function render(state = {}) {
   active = Boolean(state.active);
@@ -19,13 +27,15 @@ function render(state = {}) {
   elements.status.textContent = active ? "Перевод идёт в реальном времени" : "Готов к запуску";
   elements.hint.textContent = active
     ? "Не закрывайте вкладку конференции. Используйте наушники."
-    : "Откройте вкладку с конференцией и запустите перевод.";
+    : MODE_HINTS[currentMode];
   elements.error.hidden = !state.error;
   elements.error.textContent = state.error || "";
 }
 
 async function refresh() {
   const settings = await loadSettings();
+  currentMode = settings.mode;
+  document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
   elements.keyStatus.textContent = settings.apiKey ? `Ключ: ${maskKey(settings.apiKey)}` : "API-ключ не настроен";
   elements.source.textContent = settings.sourceLanguage === "Russian" ? "Русский" : settings.sourceLanguage;
   elements.target.textContent = settings.targetLanguage;
@@ -40,6 +50,9 @@ elements.toggle.addEventListener("click", async () => {
     if (active) {
       const result = await chrome.runtime.sendMessage({ type: "STOP_TRANSLATION" });
       render(result.state);
+      if (result.meetingId) {
+        await chrome.tabs.create({ url: `${chrome.runtime.getURL("src/history.html")}#${result.meetingId}` });
+      }
     } else {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const result = await chrome.runtime.sendMessage({ type: "START_TRANSLATION", tabId: tab.id });
@@ -54,4 +67,12 @@ elements.toggle.addEventListener("click", async () => {
 });
 
 document.querySelector("#open-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
+document.querySelector("#open-history").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("src/history.html") }));
+document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", async () => {
+  if (active) return;
+  currentMode = button.dataset.mode;
+  await saveSettings({ mode: currentMode });
+  document.querySelectorAll("[data-mode]").forEach((item) => item.classList.toggle("active", item === button));
+  render({ active: false });
+}));
 refresh().catch((error) => render({ error: error.message }));

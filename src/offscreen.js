@@ -8,6 +8,73 @@ let outgoingTranslator;
 let microphoneStream;
 let tabStream;
 let state = { active: false, phase: "idle", error: "" };
+let meeting = null;
+
+const MODES = {
+  translation: { audio: true, notes: false, summary: false },
+  notes: { audio: false, notes: true, summary: true },
+  both: { audio: true, notes: true, summary: true },
+  transcript: { audio: false, notes: true, summary: false }
+};
+
+function addTranscript(speaker, text, language) {
+  if (!meeting || !text) return;
+  meeting.transcript.push({
+    speaker,
+    text,
+    language,
+    offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000))
+  });
+}
+
+function responseText(payload) {
+  if (typeof payload.output_text === "string") return payload.output_text;
+  return (payload.output || []).flatMap((item) => item.content || [])
+    .filter((item) => item.type === "output_text")
+    .map((item) => item.text || "")
+    .join("\n").trim();
+}
+
+async function createSummary(settings, currentMeeting) {
+  const lines = currentMeeting.transcript.map((item) =>
+    `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`
+  ).join("\n");
+  if (!lines) return "Недостаточно распознанной речи для конспекта.";
+  const detail = settings.summaryDetail === "brief" ? "краткий" : settings.summaryDetail === "detailed" ? "подробный" : "сбалансированный";
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-5.6-sol",
+      instructions: `Создай ${detail} конспект встречи на русском языке в Markdown. Обязательно используй разделы: Краткое содержание, Основные темы, Принятые решения, Задачи и ответственные, Сроки, Открытые вопросы. Не придумывай отсутствующие факты; если раздел пуст, напиши «Не зафиксировано».`,
+      input: lines
+    })
+  });
+  if (!response.ok) throw new Error(`Не удалось создать конспект: OpenAI ${response.status}`);
+  return responseText(await response.json()) || "Конспект не был сформирован.";
+}
+
+async function saveMeeting(settings, currentMeeting) {
+  const finishedAt = Date.now();
+  const record = {
+    ...currentMeeting,
+    finishedAt,
+    durationSeconds: Math.round((finishedAt - currentMeeting.startedAt) / 1000),
+    summary: ""
+  };
+  if (!settings.saveTranscript) record.transcript = [];
+  const mode = MODES[currentMeeting.mode];
+  if (mode.summary) {
+    try { record.summary = await createSummary(settings, currentMeeting); }
+    catch (error) { record.summary = `> Конспект не создан: ${error.message}`; }
+  }
+  const { meetings = [] } = await chrome.storage.local.get({ meetings: [] });
+  await chrome.storage.local.set({ meetings: [record, ...meetings].slice(0, 50), lastMeetingId: record.id });
+  return record;
+}
 
 async function applySink(element, deviceId) {
   if (deviceId && deviceId !== "default" && "setSinkId" in element) {
@@ -16,6 +83,8 @@ async function applySink(element, deviceId) {
 }
 
 async function stop() {
+  const settings = await loadSettings();
+  const capturedMeeting = meeting;
   incomingTranslator?.close();
   outgoingTranslator?.close();
   microphoneStream?.getTracks().forEach((track) => track.stop());
@@ -23,14 +92,28 @@ async function stop() {
   incomingTranslator = outgoingTranslator = microphoneStream = tabStream = null;
   incomingOutput.srcObject = null;
   outgoingOutput.srcObject = null;
+  meeting = null;
+  state = { active: false, phase: capturedMeeting ? "summarizing" : "idle", error: "" };
+  const completedMeeting = capturedMeeting && MODES[capturedMeeting.mode]?.notes
+    ? await saveMeeting(settings, capturedMeeting)
+    : null;
   state = { active: false, phase: "idle", error: "" };
-  return { ok: true, state };
+  return { ok: true, state, meetingId: completedMeeting?.id || null };
 }
 
 async function start(streamId) {
   await stop();
   const settings = await loadSettings();
   if (!settings.apiKey) throw new Error("Сначала добавьте OpenAI API-ключ в настройках");
+  const mode = MODES[settings.mode] || MODES.both;
+  meeting = mode.notes ? {
+    id: crypto.randomUUID(),
+    title: `Встреча ${new Date().toLocaleString("ru-RU")}`,
+    startedAt: Date.now(),
+    mode: settings.mode,
+    languages: [settings.sourceLanguage, settings.targetLanguage],
+    transcript: []
+  } : null;
   state = { active: true, phase: "connecting", error: "" };
 
   microphoneStream = await navigator.mediaDevices.getUserMedia({
@@ -48,6 +131,8 @@ async function start(streamId) {
 
   await applySink(outgoingOutput, settings.outgoingDeviceId);
   await applySink(incomingOutput, settings.incomingDeviceId);
+  outgoingOutput.muted = !mode.audio;
+  incomingOutput.muted = !mode.audio;
 
   outgoingTranslator = new RealtimeTranslator({
     apiKey: settings.apiKey,
@@ -56,6 +141,8 @@ async function start(streamId) {
     from: settings.sourceLanguage,
     to: settings.targetLanguage,
     voice: settings.outgoingVoice,
+    verbatim: !mode.audio,
+    onTranscript: (text) => addTranscript("Вы", text, mode.audio ? settings.targetLanguage : settings.sourceLanguage),
     onState: (phase) => { state.phase = phase; }
   });
   incomingTranslator = new RealtimeTranslator({
@@ -65,6 +152,8 @@ async function start(streamId) {
     from: settings.targetLanguage,
     to: settings.sourceLanguage,
     voice: settings.incomingVoice,
+    verbatim: !mode.audio,
+    onTranscript: (text) => addTranscript("Собеседник", text, mode.audio ? settings.sourceLanguage : settings.targetLanguage),
     onState: (phase) => { state.phase = phase; }
   });
 

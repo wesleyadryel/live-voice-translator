@@ -1,0 +1,29 @@
+.history-shell { min-height: 100vh; }
+.history-layout { display: grid; grid-template-columns: 290px 1fr; min-height: 100vh; }
+.history-layout aside { position: sticky; top: 0; height: 100vh; padding: 28px 20px; border-right: 1px solid var(--line); background: #0d100e; display: flex; flex-direction: column; }
+.history-list { margin-top: 30px; overflow: auto; }
+.meeting-item { width: 100%; padding: 15px 5px; border: 0; border-bottom: 1px solid #202521; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.meeting-item:hover, .meeting-item.active { color: var(--accent); }
+.meeting-item strong, .meeting-item small { display: block; }
+.meeting-item strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.meeting-item small { margin-top: 6px; color: var(--muted); font-size: 10px; }
+.danger-button { margin-top: auto; padding: 10px; border: 1px solid #422c2c; border-radius: 9px; background: transparent; color: #c77d7d; font-size: 11px; cursor: pointer; }
+.history-layout article { max-width: 1050px; padding: 64px clamp(32px, 7vw, 110px); }
+.empty-state { margin-top: 20vh; color: var(--muted); }
+.empty-state h1, .meeting-head h1 { margin: 0; color: var(--text); text-align: left; }
+.meeting-head { margin-bottom: 38px; padding-bottom: 30px; border-bottom: 1px solid var(--line); }
+.meeting-head p { color: var(--muted); font-size: 12px; }
+.meeting-actions { display: flex; gap: 8px; margin-top: 20px; }
+.meeting-actions button { padding: 9px 13px; border: 1px solid #303732; border-radius: 9px; background: #161a17; color: var(--text); font-size: 11px; cursor: pointer; }
+.summary { color: #d6ddd8; font-size: 14px; line-height: 1.75; }
+.summary h2 { margin: 30px 0 10px; color: var(--accent); font-size: 13px; letter-spacing: .02em; text-transform: none; }
+.transcript { margin-top: 50px; padding-top: 30px; border-top: 1px solid var(--line); }
+.transcript-row { display: grid; grid-template-columns: 70px 100px 1fr; gap: 15px; padding: 10px 0; border-bottom: 1px solid #191d1a; font-size: 12px; line-height: 1.5; }
+.transcript-row time, .transcript-row strong { color: var(--muted); }
+@media (max-width: 720px) {
+  .history-layout { grid-template-columns: 1fr; }
+  .history-layout aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .history-layout article { padding: 35px 22px; }
+  .transcript-row { grid-template-columns: 50px 1fr; }
+  .transcript-row span { grid-column: 1 / -1; }
+}

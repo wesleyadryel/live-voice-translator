@@ -5,9 +5,12 @@ Open-source, two-way live voice translation for browser conferences.
 You speak Russian and the other participant hears English. They speak English
 and you hear Russian. Translation runs through the user's own OpenAI API key.
 
+The extension also supports meeting notes. Choose one of four modes before a
+call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
+
 ## Status
 
-Early macOS/Chrome MVP. The extension captures the conference tab and the
+Version 0.2 is an early macOS/Chrome MVP. The extension captures the conference tab and the
 microphone, creates two OpenAI Realtime sessions, and routes each translated
 audio stream to a selected output device.
 
@@ -30,6 +33,11 @@ audio stream to a selected output device.
 6. In Meet/Telemost/Zoom select that same virtual cable as the microphone.
 7. Open the conference tab, click the extension, then **Start translation**.
 
+When a notes mode is selected, stopping the session opens the meeting history.
+The extension can create a Russian Markdown summary with decisions, tasks,
+deadlines, and open questions. The latest 50 meetings are kept locally and can
+be copied, downloaded, or deleted.
+
 Use headphones. Without them the conference audio can feed back into the
 microphone and be translated repeatedly.
 
@@ -51,6 +59,8 @@ project spending limit.
 - Meet is the first target. Telemost and browser Zoom need live compatibility
   verification.
 - OpenAI API usage is billed to the key owner; the extension itself is free.
+- Speaker labels currently distinguish the local microphone from the conference
+  tab; identifying individual remote participants is not implemented yet.
 
 ## License
 

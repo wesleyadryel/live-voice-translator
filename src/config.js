@@ -1,11 +1,14 @@
 export const DEFAULT_SETTINGS = {
   apiKey: "",
+  mode: "both",
   sourceLanguage: "Russian",
   targetLanguage: "English",
   outgoingVoice: "marin",
   incomingVoice: "cedar",
   outgoingDeviceId: "default",
-  incomingDeviceId: "default"
+  incomingDeviceId: "default",
+  summaryDetail: "standard",
+  saveTranscript: true
 };
 
 export async function loadSettings() {

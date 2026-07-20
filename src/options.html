@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Настройки — Live Voice Translator</title>
   <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="modes.css">
 </head>
 <body class="options-shell">
   <main class="settings">
@@ -27,6 +28,12 @@
         <label>Перевод для собеседника<select id="outgoing-device"><option value="default">Системный выход</option></select></label>
         <label>Перевод для вас<select id="incoming-device"><option value="default">Системный выход</option></select></label>
         <p class="help">Для исходящего перевода выберите виртуальный аудиокабель, а его же укажите микрофоном в конференции.</p>
+      </section>
+      <section>
+        <h2>Конспект встречи</h2>
+        <label>Подробность<select id="summary-detail"><option value="brief">Краткий</option><option value="standard">Стандартный</option><option value="detailed">Подробный</option></select></label>
+        <label class="check-row"><input id="save-transcript" type="checkbox">Сохранять полный текст встречи локально</label>
+        <p class="help">Хранятся последние 50 встреч. Историю можно удалить в любой момент.</p>
       </section>
       <div class="form-actions"><span id="save-status"></span><button class="primary-button" type="submit">Сохранить настройки</button></div>
     </form>

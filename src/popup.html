@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Live Voice Translator</title>
   <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="modes.css">
 </head>
 <body class="popup-shell">
   <main class="popup">
@@ -20,13 +21,20 @@
       <p id="hint">Откройте вкладку с конференцией и запустите перевод.</p>
     </section>
 
+    <nav class="mode-switch" aria-label="Режим работы">
+      <button data-mode="translation">Перевод</button>
+      <button data-mode="notes">Конспект</button>
+      <button data-mode="both">Вместе</button>
+      <button data-mode="transcript">Текст</button>
+    </nav>
+
     <div class="wave" aria-hidden="true">
       <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
     </div>
 
     <button class="primary-button" id="toggle"><span class="power">●</span><span id="toggle-label">Начать перевод</span></button>
     <p class="error" id="error" hidden></p>
-    <footer><span id="key-status">API-ключ не настроен</span><span>Open source · MIT</span></footer>
+    <footer><span id="key-status">API-ключ не настроен</span><button id="open-history">История встреч</button></footer>
   </main>
   <script type="module" src="popup.js"></script>
 </body>
