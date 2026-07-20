@@ -4,17 +4,17 @@ import { localizePage, t } from "./i18n.js";
 const $ = (selector) => document.querySelector(selector);
 const elements = {
   toggle: $("#toggle"), toggleLabel: $("#toggle-label"), status: $("#status-label"), phase: $("#phase-pill"),
-  timer: $("#session-timer"), hint: $("#hint"), error: $("#error"), errorCopy: $("#error-copy"),
+  timer: $("#session-timer"), error: $("#error"), errorCopy: $("#error-copy"),
   keyStatus: $("#key-status"), usage: $("#usage-label"), source: $("#source-label"), target: $("#target-label"),
-  setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"), profile: $("#profile-switch")
+  setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"),
+  modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device")
 };
 
 let active = false;
 let busy = false;
 let currentMode = "both";
-let currentProfile = "solo";
 let currentSettings = {};
-let locale = "ru";
+let locale = "en";
 let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
 
@@ -43,7 +43,11 @@ function formatDuration(totalSeconds) {
 }
 
 function languageLabel(value) {
-  return ({ Russian: "Русский", English: "English", Spanish: "Español", German: "Deutsch", French: "Français" })[value] || value;
+  const names = {
+    ru: { Russian: "Русский", English: "Английский", Spanish: "Испанский", German: "Немецкий", French: "Французский" },
+    en: { Russian: "Russian", English: "English", Spanish: "Spanish", German: "German", French: "French" }
+  };
+  return (names[locale] || names.en)[value] || value;
 }
 
 async function microphonePermission() {
@@ -78,13 +82,10 @@ function render(state = currentState) {
   const iconPath = elements.toggle.querySelector(".button-symbol path");
   if (iconPath) iconPath.setAttribute("d", active ? "M8 8h8v8H8z" : "m9 7 8 5-8 5V7Z");
   elements.status.textContent = t(locale, PHASES[state.phase] || (active ? "live" : "ready"));
-  elements.hint.textContent = active
-    ? state.phase === "reconnecting" ? "Связь восстанавливается автоматически. Не закрывайте вкладку." : `Сеанс работает в фоне · реплик: ${state.transcriptCount || 0}`
-    : t(locale, MODE_HINTS[currentMode]);
   const error = state.error ? friendlyError(state.error) : "";
   elements.error.hidden = !error;
   elements.errorCopy.textContent = error;
-  elements.profile.hidden = !["translation", "both"].includes(currentMode);
+  elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
   elements.notice.hidden = active || !["notes", "both", "transcript"].includes(currentMode) || Boolean(currentSettings.recordingNoticeAccepted);
   updateTimer();
 }
@@ -99,12 +100,13 @@ function updateTimer() {
 async function refresh() {
   const settings = await loadSettings();
   currentSettings = settings;
-  locale = settings.interfaceLanguage || "ru";
+  locale = settings.interfaceLanguage || "en";
   localizePage(locale);
   currentMode = settings.mode;
-  currentProfile = settings.audioProfile;
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
-  document.querySelectorAll("[data-profile]").forEach((button) => button.classList.toggle("active", button.dataset.profile === currentProfile));
+  elements.interfaceLanguage.value = locale;
+  elements.sourceLanguage.value = settings.sourceLanguage;
+  elements.targetLanguage.value = settings.targetLanguage;
   elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured");
   elements.usage.textContent = t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 });
   elements.source.textContent = languageLabel(settings.sourceLanguage);
@@ -114,6 +116,22 @@ async function refresh() {
   await renderPreflight(settings);
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   render(result?.state || { active: false, phase: "idle", error: result?.error || "" });
+}
+
+async function listOutputs(settings) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audiooutput");
+    for (const [element, selected] of [[elements.outgoingDevice, settings.outgoingDeviceId], [elements.incomingDevice, settings.incomingDeviceId]]) {
+      element.replaceChildren(new Option("System output", "default"));
+      outputs.forEach((device, index) => element.add(new Option(device.label || `Audio output ${index + 1}`, device.deviceId)));
+      element.value = [...element.options].some((option) => option.value === selected) ? selected : "default";
+    }
+  } catch {
+    elements.outgoingDevice.value = settings.outgoingDeviceId || "default";
+    elements.incomingDevice.value = settings.incomingDeviceId || "default";
+  }
 }
 
 elements.toggle.addEventListener("click", async () => {
@@ -162,13 +180,15 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   await saveSettings({ mode: currentMode });
   await refresh();
 }));
-document.querySelectorAll("[data-profile]").forEach((button) => button.addEventListener("click", async () => {
-  if (active || busy) return;
-  currentProfile = button.dataset.profile;
-  await saveSettings({ audioProfile: currentProfile });
+elements.interfaceLanguage.addEventListener("change", async () => { await saveSettings({ interfaceLanguage: elements.interfaceLanguage.value }); await refresh(); });
+elements.sourceLanguage.addEventListener("change", async () => { await saveSettings({ sourceLanguage: elements.sourceLanguage.value }); await refresh(); });
+elements.targetLanguage.addEventListener("change", async () => { await saveSettings({ targetLanguage: elements.targetLanguage.value }); await refresh(); });
+for (const select of [elements.outgoingDevice, elements.incomingDevice]) select.addEventListener("change", async () => {
+  const outgoingDeviceId = elements.outgoingDevice.value;
+  await saveSettings({ outgoingDeviceId, incomingDeviceId: elements.incomingDevice.value, audioProfile: outgoingDeviceId === "default" ? "solo" : "conference" });
   await refresh();
-}));
+});
 
-refresh().catch((error) => render({ active: false, phase: "error", error: friendlyError(error) }));
+refresh().then(() => listOutputs(currentSettings)).catch((error) => render({ active: false, phase: "error", error: friendlyError(error) }));
 setInterval(updateTimer, 1000);
 setInterval(() => { if (document.visibilityState === "visible" && !busy) refresh().catch(() => {}); }, 2500);

@@ -1,6 +1,6 @@
 export const DEFAULT_SETTINGS = {
   apiKey: "",
-  interfaceLanguage: "ru",
+  interfaceLanguage: "en",
   mode: "both",
   audioProfile: "solo",
   sourceLanguage: "Russian",
