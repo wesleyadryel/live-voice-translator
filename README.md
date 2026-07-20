@@ -21,7 +21,7 @@ For voice modes choose an audio scenario:
 
 ## Status
 
-Version 0.5 is a release-candidate source build for macOS/Chrome. It captures the conference tab and microphone, creates two OpenAI Realtime sessions, routes translated audio to selected outputs, tracks session duration locally, retries a dropped Realtime connection, limits long-running sessions, and retains notes for a user-selected period.
+Version 0.7 is a release-candidate build for macOS/Chrome. It captures the conference tab and microphone, creates two OpenAI Realtime sessions, routes translated audio to selected outputs, tracks session duration locally, retries a dropped Realtime connection, limits long-running sessions, and retains notes for a user-selected period. Meeting notes can be customized by section; final transcripts can identify remote speakers when the selected transcription model returns diarized segments.
 
 ## Requirements
 
@@ -31,6 +31,18 @@ Version 0.5 is a release-candidate source build for macOS/Chrome. It captures th
 - A virtual audio device for translated microphone output
   - macOS: [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)
   - Windows: VB-CABLE or an equivalent virtual cable
+
+## macOS installer
+
+Create a distributable DMG on a Mac:
+
+```bash
+bash scripts/build-macos-installer.sh
+```
+
+The result appears in `dist/macos/`. The installer copies a self-contained extension folder into `~/Library/Application Support/Live Voice Translator/extension`, opens Chrome and Finder, then explains the one required Chrome confirmation.
+
+Chrome does not allow a local DMG or CRX to silently install an extension on macOS or Windows. For a one-click public installation and automatic updates, publish the extension in the Chrome Web Store; until then, use the installer below or the source steps.
 
 ## Install from source
 
@@ -66,8 +78,8 @@ project spending limit.
 - Meet is the first target. Telemost and browser Zoom need live compatibility
   verification.
 - OpenAI API usage is billed to the key owner; the extension itself is free.
-- Speaker labels currently distinguish the local microphone from the conference
-  tab; identifying individual remote participants is not implemented yet.
+- Identifying individual remote participants depends on the transcription model
+  returning diarized segments and is only performed after a notes session ends.
 
 Read [PRIVACY.md](PRIVACY.md) and complete [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before publishing a packaged build.
 
