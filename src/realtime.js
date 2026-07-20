@@ -1,4 +1,5 @@
-const REALTIME_URL = "https://api.openai.com/v1/realtime/calls";
+const REALTIME_MODEL = "gpt-realtime-1.5";
+const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
 
 export class RealtimeTranslator {
   constructor({ apiKey, inputStream, outputElement, from, to, voice, onState, onTranscript, verbatim = false }) {
@@ -55,7 +56,7 @@ export class RealtimeTranslator {
         type: "session.update",
         session: {
           type: "realtime",
-          model: "gpt-realtime",
+          model: REALTIME_MODEL,
           output_modalities: ["audio"],
           audio: {
             input: {
