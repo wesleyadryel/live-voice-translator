@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --app-bg: #f5f5f7;
   --surface: #ffffff;
   --surface-subtle: #f2f2f7;
@@ -17,33 +17,18 @@
   --ease: cubic-bezier(.2, .8, .2, 1);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
 }
+/* The extension is intentionally light-first. The generated artwork is kept low-contrast so it never competes with meeting controls. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --app-bg: #1c1c1e;
-    --surface: #2c2c2e;
-    --surface-subtle: #363638;
-    --text: #f5f5f7;
-    --secondary: #aeaeb2;
-    --tertiary: #838388;
-    --line: rgba(235, 235, 245, .14);
-    --accent: #0a84ff;
-    --accent-soft: rgba(10, 132, 255, .18);
-    --success: #30d158;
-    --warning: #ff9f0a;
-    --danger: #ff453a;
-    --focus: rgba(10, 132, 255, .45);
-    --shadow: 0 12px 30px rgba(0, 0, 0, .24);
-  }
+  :root { color-scheme: light; --app-bg: #f5f8ff; --surface: rgba(255,255,255,.86); --surface-subtle: rgba(236,242,255,.76); --text: #172033; --secondary: #5f6b7e; --tertiary: #7c8797; --line: rgba(68, 88, 125, .16); --accent: #2774e8; --accent-soft: rgba(39, 116, 232, .12); --success: #218a4d; --warning: #a76600; --danger: #d02c3d; --focus: rgba(39,116,232,.32); --shadow: 0 12px 30px rgba(42,72,130,.12); }
 }
-
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { min-width: 300px; min-height: 100%; }
-body.panel-shell { margin: 0; background: var(--app-bg); color: var(--text); font-size: 14px; }
+body.panel-shell { margin: 0; background: #f5f8ff url("../assets/backgrounds/voice-waves-light.png") center / cover fixed; color: var(--text); font-size: 14px; }
 button, input, select { font: inherit; }
 button { touch-action: manipulation; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.control-panel { width: min(100%, 560px); min-height: 100dvh; margin: 0 auto; padding: 16px 20px 20px; }
+.control-panel { width: min(100%, 560px); min-height: 100dvh; margin: 0 auto; padding: 16px 20px 20px; background: linear-gradient(90deg, rgba(248,251,255,.82), rgba(255,255,255,.72)); }
 
 .mac-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-bottom: 18px; }
 .app-identity small, .app-identity strong { display: block; }.app-identity small { color: var(--tertiary); font-size: 10px; font-weight: 700; letter-spacing: .12em; }.app-identity strong { margin-top: 2px; font-size: 17px; font-weight: 680; letter-spacing: -.025em; }
@@ -67,3 +52,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @keyframes level { 0%,100% { height: 4px; opacity: .45; } 50% { height: 22px; opacity: 1; } }@keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 360px) { .control-panel { padding-inline: 14px; }.language-route { grid-template-columns: 1fr 24px 1fr; }.language-route strong { font-size: 24px; }.scenario-list { grid-template-columns: 1fr; }.scenario-list button + button { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }.preflight { grid-template-columns: 1fr; gap: 8px; }.preflight > div, .preflight > div:first-child { padding-left: 0; }.preflight > div + div { padding-left: 0; border-left: 0; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* Shared light treatment for full-page settings and meeting history. */
+body.options-shell, body.history-shell { background: #f5f8ff url("../assets/backgrounds/voice-waves-light.png") center / cover fixed; color: var(--text); }
+.settings { padding: 48px 0 72px; }.settings>header, .settings form section { border-color: var(--line); }.settings>header p, .help { color: var(--secondary); }.settings h2, .settings label { color: var(--secondary); }.settings input, .settings select { border-color: var(--line); background: rgba(255,255,255,.82); color: var(--text); }.settings input:focus, .settings select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }.settings .secondary-button { border-color: var(--line); background: rgba(255,255,255,.78); color: var(--text); }.settings .two-column>div:first-child { border-color: var(--line); }.settings .primary-button { background: var(--accent); color: #fff; }
+.history-layout aside { border-color: var(--line); background: rgba(255,255,255,.78); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }.history-layout article { color: var(--text); }.history-layout .meeting-item { border-color: var(--line); color: var(--text); }.history-layout .meeting-item small, .history-layout .meeting-head p, .history-layout .empty-state, .history-layout .transcript-row time, .history-layout .transcript-row strong { color: var(--secondary); }.history-layout .meeting-actions button { border-color: var(--line); background: rgba(255,255,255,.78); color: var(--text); }.history-layout .summary { color: var(--text); }.history-layout .transcript, .history-layout .transcript-row, .history-layout .meeting-head { border-color: var(--line); }.history-layout .danger-button { border-color: rgba(208,44,61,.32); color: var(--danger); }

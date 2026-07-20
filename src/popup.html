@@ -12,30 +12,30 @@
   <main class="control-panel">
     <header class="mac-toolbar">
       <div class="app-identity">
-        <small>LIVE VOICE</small><strong>Переводчик встречи</strong>
+        <small>LIVE VOICE</small><strong data-i18n="session">Переводчик встречи</strong>
       </div>
       <div class="toolbar-actions">
-        <button class="toolbar-text-button" id="open-history">История</button>
-        <button class="toolbar-button" id="open-settings" aria-label="Открыть настройки" title="Настройки">
+        <button class="toolbar-text-button" id="open-history" data-i18n="history">История</button>
+        <button class="toolbar-button" id="open-settings" aria-label="Открыть настройки" title="Настройки" data-i18n-title="settings" data-i18n-aria="settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l2-1.6-2-3.4-2.5 1a8 8 0 0 0-2.6-1.5L14 2.4h-4L9.6 5a8 8 0 0 0-2.6 1.5l-2.5-1-2 3.4 2 1.6a7.8 7.8 0 0 0 0 3l-2 1.6 2 3.4 2.5-1A8 8 0 0 0 9.6 19l.4 2.6h4l.4-2.6a8 8 0 0 0 2.6-1.5l2.5 1 2-3.4-2.1-1.6Z"/></svg>
         </button>
       </div>
     </header>
 
     <section class="setup-banner" id="setup-banner" hidden>
-      <div><strong>Подключите OpenAI</strong><p id="setup-copy">Добавьте API-ключ, чтобы начать перевод.</p></div>
-      <button id="setup-action">Настроить</button>
+      <div><strong data-i18n="configureOpenAI">Подключите OpenAI</strong><p id="setup-copy" data-i18n="setupCopy">Добавьте API-ключ, чтобы начать перевод.</p></div>
+      <button id="setup-action" data-i18n="configure">Настроить</button>
     </section>
 
     <section class="session-surface" aria-live="polite">
       <div class="session-meta">
-        <span class="phase-pill" id="phase-pill"><i></i><span id="status-label">Готов</span></span>
+        <span class="phase-pill" id="phase-pill"><i></i><span id="status-label" data-i18n="ready">Готов</span></span>
         <time id="session-timer" datetime="PT0S">00:00</time>
       </div>
       <div class="language-route">
-        <div><span>Вы</span><strong id="source-label">Русский</strong></div>
+        <div><span data-i18n="you">Вы</span><strong id="source-label">Русский</strong></div>
         <svg viewBox="0 0 40 20" aria-hidden="true"><path d="M3 10h30m-6-6 6 6-6 6"/></svg>
-        <div class="align-right"><span>Собеседник</span><strong id="target-label">English</strong></div>
+        <div class="align-right"><span data-i18n="participant">Собеседник</span><strong id="target-label">English</strong></div>
       </div>
       <div class="audio-visual" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
@@ -44,37 +44,37 @@
     </section>
 
     <section class="control-section">
-      <div class="section-label"><span>Режим работы</span></div>
+      <div class="section-label"><span data-i18n="mode">Режим работы</span></div>
       <nav class="mac-segmented" aria-label="Режим работы">
-        <button data-mode="translation">Перевод</button>
-        <button data-mode="notes">Конспект</button>
-        <button data-mode="both">Вместе</button>
-        <button data-mode="transcript">Текст</button>
+        <button data-mode="translation" data-i18n="translation">Перевод</button>
+        <button data-mode="notes" data-i18n="notes">Конспект</button>
+        <button data-mode="both" data-i18n="both">Вместе</button>
+        <button data-mode="transcript" data-i18n="transcript">Текст</button>
       </nav>
     </section>
 
     <section class="control-section" id="profile-switch">
-      <div class="section-label"><span>Аудиомаршрут</span></div>
+      <div class="section-label"><span data-i18n="audioRoute">Аудиомаршрут</span></div>
       <div class="scenario-list">
-        <button data-profile="solo"><span class="scenario-icon"><svg viewBox="0 0 24 24"><path d="M5 9v6m4-9v12m4-15v18m4-13v8m4-5v2"/></svg></span><span><strong>Проверка в одиночку</strong><small>Перевод прозвучит на этом Mac</small></span><i></i></button>
-        <button data-profile="conference"><span class="scenario-icon"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 2a3 3 0 1 0 0-6m-8 7c-4 0-6 2-6 5h12c0-3-2-5-6-5Zm8 1c3 0 5 1.5 5 4h-5"/></svg></span><span><strong>Конференция</strong><small>Голос направляется собеседнику</small></span><i></i></button>
+        <button data-profile="solo"><span class="scenario-icon"><svg viewBox="0 0 24 24"><path d="M5 9v6m4-9v12m4-15v18m4-13v8m4-5v2"/></svg></span><span><strong data-i18n="solo">Проверка в одиночку</strong><small data-i18n="soloDescription">Перевод прозвучит на этом Mac</small></span><i></i></button>
+        <button data-profile="conference"><span class="scenario-icon"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 2a3 3 0 1 0 0-6m-8 7c-4 0-6 2-6 5h12c0-3-2-5-6-5Zm8 1c3 0 5 1.5 5 4h-5"/></svg></span><span><strong data-i18n="conference">Конференция</strong><small data-i18n="conferenceDescription">Голос направляется собеседнику</small></span><i></i></button>
       </div>
     </section>
 
     <section class="preflight" id="preflight" aria-label="Готовность системы">
-      <div data-check="api"><i></i><span>OpenAI</span><small>Проверка…</small></div>
-      <div data-check="microphone"><i></i><span>Микрофон</span><small>Проверка…</small></div>
-      <div data-check="route"><i></i><span>Маршрут</span><small>Проверка…</small></div>
+      <div data-check="api"><i></i><span data-i18n="openai">OpenAI</span><small>Проверка…</small></div>
+      <div data-check="microphone"><i></i><span data-i18n="microphone">Микрофон</span><small>Проверка…</small></div>
+      <div data-check="route"><i></i><span data-i18n="route">Маршрут</span><small>Проверка…</small></div>
     </section>
 
     <div class="notice" id="recording-notice" hidden>
-      <p>В режимах с конспектом аудио отправляется в OpenAI. История хранится локально.</p>
-      <button id="accept-notice">Понятно</button>
+      <p data-i18n="notice">В режимах с конспектом аудио отправляется в OpenAI. История хранится локально.</p>
+      <button id="accept-notice" data-i18n="understood">Понятно</button>
     </div>
 
     <div class="error-callout" id="error" role="alert" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3.5v.1M10.3 3.6 2.5 17.1A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.9L13.7 3.6a2 2 0 0 0-3.4 0Z"/></svg>
-      <span id="error-copy"></span><button id="error-settings">Исправить</button>
+      <span id="error-copy"></span><button id="error-settings" data-i18n="fix">Исправить</button>
     </div>
 
     <button class="session-button" id="toggle">

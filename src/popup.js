@@ -1,4 +1,5 @@
 import { loadSettings, maskKey, saveSettings } from "./config.js";
+import { localizePage, t } from "./i18n.js";
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -13,30 +14,23 @@ let busy = false;
 let currentMode = "both";
 let currentProfile = "solo";
 let currentSettings = {};
+let locale = "ru";
 let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
 
-const MODE_HINTS = {
-  translation: "Переводите разговор голосом без сохранения текста.",
-  notes: "Запишите разговор и получите структурированный конспект.",
-  both: "Переводите голос и одновременно готовьте конспект.",
-  transcript: "Сохраните полный текст разговора без озвучивания."
-};
-const PHASES = {
-  idle: "Готов", connecting: "Подключение", live: "В эфире", reconnecting: "Восстановление",
-  summarizing: "Готовим конспект", disconnected: "Нет соединения", failed: "Ошибка", error: "Ошибка", closed: "Остановлено", limit: "Лимит времени"
-};
-const START_LABELS = { translation: "Начать перевод", notes: "Начать конспект", both: "Начать встречу", transcript: "Начать запись" };
+const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
+const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
+const START_LABELS = { translation: "startTranslation", notes: "startNotes", both: "startMeeting", transcript: "startTranscript" };
 
 function friendlyError(error) {
   const message = error?.message || String(error || "Неизвестная ошибка");
-  if (/Permission dismissed|Permission denied|NotAllowedError/i.test(message)) return "Нет доступа к микрофону. Разрешите его в настройках Chrome.";
-  if (/OpenAI 401|invalid.*key|Incorrect API key/i.test(message)) return "OpenAI отклонил API-ключ. Проверьте ключ в настройках.";
-  if (/OpenAI 429|quota|rate limit/i.test(message)) return "Достигнут лимит OpenAI API. Проверьте баланс и лимиты проекта.";
+  if (/Permission dismissed|Permission denied|NotAllowedError/i.test(message)) return t(locale, "permission");
+  if (/OpenAI 401|invalid.*key|Incorrect API key/i.test(message)) return t(locale, "keyError");
+  if (/OpenAI 429|quota|rate limit/i.test(message)) return t(locale, "quota");
   if (/Requested device not found|NotFoundError/i.test(message)) return "Выбранное аудиоустройство отключено. Выберите доступный выход.";
   if (/Cannot capture|tabCapture|active tab/i.test(message)) return "Откройте вкладку конференции и запустите перевод из неё.";
   if (/virtual|аудиокабель|разными устройствами/i.test(message)) return message;
-  if (/network|fetch|connection/i.test(message)) return "Соединение прервано. Проверьте интернет и повторите запуск.";
+  if (/network|fetch|connection/i.test(message)) return t(locale, "network");
   return message;
 }
 
@@ -64,12 +58,12 @@ function setCheck(name, state, copy) {
 }
 
 async function renderPreflight(settings) {
-  setCheck("api", settings.apiKey ? "ok" : "error", settings.apiKey ? "Настроен" : "Нет ключа");
+  setCheck("api", settings.apiKey ? "ok" : "error", settings.apiKey ? t(locale, "configured") : t(locale, "required"));
   const permission = await microphonePermission();
-  setCheck("microphone", permission === "granted" ? "ok" : permission === "denied" ? "error" : "warn", permission === "granted" ? "Разрешён" : permission === "denied" ? "Запрещён" : "При запуске");
+  setCheck("microphone", permission === "granted" ? "ok" : permission === "denied" ? "error" : "warn", permission === "granted" ? t(locale, "allowed") : permission === "denied" ? t(locale, "error") : t(locale, "connecting"));
   const voiceMode = ["translation", "both"].includes(settings.mode);
   const conferenceReady = settings.audioProfile !== "conference" || (settings.outgoingDeviceId && settings.outgoingDeviceId !== "default" && settings.outgoingDeviceId !== settings.incomingDeviceId);
-  setCheck("route", !voiceMode || conferenceReady ? "ok" : "error", !voiceMode ? "Не требуется" : settings.audioProfile === "solo" ? "На этом Mac" : conferenceReady ? "Раздельный" : "Настройте");
+  setCheck("route", !voiceMode || conferenceReady ? "ok" : "error", !voiceMode ? t(locale, "notRequired") : settings.audioProfile === "solo" ? "Mac" : conferenceReady ? t(locale, "ready") : t(locale, "required"));
 }
 
 function render(state = currentState) {
@@ -80,13 +74,13 @@ function render(state = currentState) {
   document.body.classList.toggle("is-busy", busy);
   elements.toggle.classList.toggle("is-loading", busy || ["connecting", "reconnecting", "summarizing"].includes(state.phase));
   elements.toggle.disabled = busy;
-  elements.toggleLabel.textContent = active ? "Остановить" : START_LABELS[currentMode];
+  elements.toggleLabel.textContent = active ? t(locale, "stop") : t(locale, START_LABELS[currentMode]);
   const iconPath = elements.toggle.querySelector(".button-symbol path");
   if (iconPath) iconPath.setAttribute("d", active ? "M8 8h8v8H8z" : "m9 7 8 5-8 5V7Z");
-  elements.status.textContent = PHASES[state.phase] || (active ? "В эфире" : "Готов");
+  elements.status.textContent = t(locale, PHASES[state.phase] || (active ? "live" : "ready"));
   elements.hint.textContent = active
     ? state.phase === "reconnecting" ? "Связь восстанавливается автоматически. Не закрывайте вкладку." : `Сеанс работает в фоне · реплик: ${state.transcriptCount || 0}`
-    : MODE_HINTS[currentMode];
+    : t(locale, MODE_HINTS[currentMode]);
   const error = state.error ? friendlyError(state.error) : "";
   elements.error.hidden = !error;
   elements.errorCopy.textContent = error;
@@ -105,16 +99,18 @@ function updateTimer() {
 async function refresh() {
   const settings = await loadSettings();
   currentSettings = settings;
+  locale = settings.interfaceLanguage || "ru";
+  localizePage(locale);
   currentMode = settings.mode;
   currentProfile = settings.audioProfile;
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
   document.querySelectorAll("[data-profile]").forEach((button) => button.classList.toggle("active", button.dataset.profile === currentProfile));
-  elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : "API не настроен";
-  elements.usage.textContent = `Использовано ${Math.ceil((settings.usageSeconds || 0) / 60)} мин · ${settings.sessionCount || 0} сеансов`;
+  elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured");
+  elements.usage.textContent = t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 });
   elements.source.textContent = languageLabel(settings.sourceLanguage);
   elements.target.textContent = languageLabel(settings.targetLanguage);
   elements.setup.hidden = Boolean(settings.apiKey);
-  elements.setupCopy.textContent = settings.apiKey ? "" : "Добавьте OpenAI API-ключ, чтобы начать.";
+  elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
   await renderPreflight(settings);
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   render(result?.state || { active: false, phase: "idle", error: result?.error || "" });

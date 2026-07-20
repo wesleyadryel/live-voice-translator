@@ -1,4 +1,6 @@
 let meetings = [];
+import { localizePage, t } from "./i18n.js";
+let locale = "ru";
 
 function escapeHtml(value = "") {
   return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]);
@@ -37,15 +39,19 @@ function showMeeting(id) {
   document.querySelectorAll(".meeting-item").forEach((item) => item.classList.toggle("active", item.dataset.id === id));
   const duration = `${Math.floor(meeting.durationSeconds / 60)} мин`;
   document.querySelector("#meeting-view").innerHTML = `
-    <header class="meeting-head"><h1>${escapeHtml(meeting.title)}</h1><p>${new Date(meeting.startedAt).toLocaleString("ru-RU")} · ${duration}</p><div class="meeting-actions"><button id="copy-meeting">Копировать</button><button id="download-meeting">Скачать Markdown</button></div></header>
+    <header class="meeting-head"><h1>${escapeHtml(meeting.title)}</h1><p>${new Date(meeting.startedAt).toLocaleString(locale)} · ${duration}</p><div class="meeting-actions"><button id="copy-meeting">${t(locale, "copy")}</button><button id="download-meeting">${t(locale, "download")}</button></div></header>
     <section class="summary">${markdownToHtml(meeting.summary || "Конспект не создавался.")}</section>
-    ${meeting.transcript?.length ? `<section class="transcript"><h2>Полный текст</h2>${meeting.transcript.map((item) => `<div class="transcript-row"><time>${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}</time><strong>${escapeHtml(item.speaker)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}</section>` : ""}`;
+    ${meeting.transcript?.length ? `<section class="transcript"><h2>${t(locale, "fullTranscript")}</h2>${meeting.transcript.map((item) => `<div class="transcript-row"><time>${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}</time><strong>${escapeHtml(item.speaker)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}</section>` : ""}`;
   document.querySelector("#copy-meeting").onclick = () => navigator.clipboard.writeText(meetingMarkdown(meeting));
   document.querySelector("#download-meeting").onclick = () => download(meeting);
 }
 
 async function render() {
-  ({ meetings = [] } = await chrome.storage.local.get({ meetings: [] }));
+  const settings = await chrome.storage.local.get({ meetings: [], interfaceLanguage: "ru" });
+  meetings = settings.meetings;
+  locale = settings.interfaceLanguage || "ru";
+  document.title = t(locale, "historyTitle");
+  localizePage(locale);
   const list = document.querySelector("#history-list");
   list.innerHTML = meetings.map((meeting) => `<button class="meeting-item" data-id="${meeting.id}"><strong>${escapeHtml(meeting.title)}</strong><small>${new Date(meeting.startedAt).toLocaleDateString("ru-RU")} · ${Math.floor(meeting.durationSeconds / 60)} мин</small></button>`).join("");
   list.querySelectorAll(".meeting-item").forEach((item) => item.onclick = () => showMeeting(item.dataset.id));
@@ -54,11 +60,11 @@ async function render() {
 }
 
 document.querySelector("#clear-history").addEventListener("click", async () => {
-  if (!confirm("Удалить все локальные конспекты и транскрипции?")) return;
+  if (!confirm(t(locale, "clearConfirm"))) return;
   await chrome.storage.local.remove(["meetings", "lastMeetingId"]);
   meetings = [];
   document.querySelector("#history-list").innerHTML = "";
-  document.querySelector("#meeting-view").innerHTML = '<div class="empty-state"><h1>История очищена</h1><p>Новые встречи появятся здесь.</p></div>';
+  document.querySelector("#meeting-view").innerHTML = `<div class="empty-state"><h1>${t(locale, "historyCleared")}</h1><p>${t(locale, "noMeetingsCopy")}</p></div>`;
 });
 
 render();

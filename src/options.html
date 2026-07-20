@@ -6,6 +6,7 @@
   <title>Настройки — Live Voice Translator</title>
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="modes.css">
+  <link rel="stylesheet" href="release.css">
 </head>
 <body class="options-shell">
   <main class="settings">
@@ -14,6 +15,10 @@
       <p>Ключ остаётся только на этом устройстве и используется для прямого подключения к OpenAI.</p>
     </header>
     <form id="settings-form">
+      <section>
+        <h2 data-i18n="interfaceLanguage">Язык интерфейса</h2>
+        <label><select id="interface-language"><option value="ru">Русский</option><option value="en">English</option><option value="es">Español</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label>
+      </section>
       <section>
         <h2>OpenAI API</h2>
         <label>API-ключ<div class="input-row"><input id="api-key" type="password" autocomplete="off" placeholder="sk-proj-…"><button type="button" class="secondary-button" id="reveal-key">Показать</button></div></label>
@@ -39,7 +44,7 @@
         <label>Лимит одной сессии<select id="max-session-minutes"><option value="30">30 минут</option><option value="60">1 час</option><option value="90">1 час 30 минут</option><option value="120">2 часа</option><option value="180">3 часа</option></select></label>
         <p class="help">История и транскрипции хранятся только в Chrome на этом Mac. Их можно удалить в любой момент.</p>
       </section>
-      <div class="form-actions"><span id="save-status"></span><button class="primary-button" type="submit">Сохранить настройки</button></div>
+      <div class="form-actions"><span id="save-status"></span><button class="primary-button" type="submit" data-i18n="save">Сохранить настройки</button></div>
     </form>
   </main>
   <script type="module" src="options.js"></script>

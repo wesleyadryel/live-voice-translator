@@ -1,4 +1,5 @@
 import { loadSettings, saveSettings } from "./config.js";
+import { localizePage, t } from "./i18n.js";
 
 const ids = (name) => document.querySelector(`#${name}`);
 
@@ -24,7 +25,10 @@ async function listOutputs(selectedOutgoing, selectedIncoming) {
 
 async function init() {
   const settings = await loadSettings();
+  localizePage(settings.interfaceLanguage || "ru");
+  document.title = t(settings.interfaceLanguage || "ru", "settings");
   ids("api-key").value = settings.apiKey;
+  ids("interface-language").value = settings.interfaceLanguage || "ru";
   ids("source-language").value = settings.sourceLanguage;
   ids("target-language").value = settings.targetLanguage;
   ids("outgoing-voice").value = settings.outgoingVoice;
@@ -41,6 +45,10 @@ ids("reveal-key").addEventListener("click", () => {
   const input = ids("api-key");
   input.type = input.type === "password" ? "text" : "password";
   ids("reveal-key").textContent = input.type === "password" ? "Показать" : "Скрыть";
+});
+
+ids("interface-language").addEventListener("change", () => {
+  localizePage(ids("interface-language").value);
 });
 
 ids("test-key").addEventListener("click", async () => {
@@ -71,6 +79,7 @@ ids("settings-form").addEventListener("submit", async (event) => {
   }
   await saveSettings({
     apiKey,
+    interfaceLanguage: ids("interface-language").value,
     sourceLanguage: ids("source-language").value,
     targetLanguage: ids("target-language").value,
     outgoingVoice: ids("outgoing-voice").value,
@@ -83,7 +92,8 @@ ids("settings-form").addEventListener("submit", async (event) => {
     retentionDays: Number(ids("retention-days").value),
     maxSessionMinutes: Number(ids("max-session-minutes").value)
   });
-  ids("save-status").textContent = "Сохранено";
+  localizePage(ids("interface-language").value);
+  ids("save-status").textContent = t(ids("interface-language").value, "saved");
   setTimeout(() => { ids("save-status").textContent = ""; }, 1800);
 });
 
