@@ -10,8 +10,8 @@ function markdownToHtml(markdown = "") {
   return markdown.split("\n").map((line) => {
     if (line.startsWith("## ")) return `<h2>${escapeHtml(line.slice(3))}</h2>`;
     if (line.startsWith("# ")) return `<h2>${escapeHtml(line.slice(2))}</h2>`;
-    if (/^[-*] /.test(line)) return `<p>• ${escapeHtml(line.slice(2))}</p>`;
-    if (/^\d+\. /.test(line)) return `<p>${escapeHtml(line)}</p>`;
+    if (/^[-*] /.test(line)) return `<p class="summary-list-item">• ${escapeHtml(line.slice(2))}</p>`;
+    if (/^\d+\. /.test(line)) return `<p class="summary-list-item">${escapeHtml(line)}</p>`;
     if (line.startsWith("> ")) return `<p>${escapeHtml(line.slice(2))}</p>`;
     return line ? `<p>${escapeHtml(line)}</p>` : "";
   }).join("");

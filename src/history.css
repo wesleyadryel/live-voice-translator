@@ -16,8 +16,11 @@
 .meeting-actions { display: flex; gap: 8px; margin-top: 20px; }
 .meeting-actions button { padding: 9px 13px; border: 1px solid #303732; border-radius: 9px; background: #161a17; color: var(--text); font-size: 11px; cursor: pointer; }
 .meeting-actions .delete-meeting { border-color: rgba(215, 0, 21, .28); color: var(--danger); }
-.summary { color: #d6ddd8; font-size: 14px; line-height: 1.75; }
-.summary h2 { margin: 30px 0 10px; color: var(--accent); font-size: 13px; letter-spacing: .02em; text-transform: none; }
+.summary { color: #d6ddd8; font-size: 14px; line-height: 1.5; }
+.summary p { margin: 0 0 12px; }
+.summary p.summary-list-item { margin-bottom: 6px; }
+.summary h2 { margin: 24px 0 8px; color: var(--accent); font-size: 13px; line-height: 1.25; letter-spacing: .02em; text-transform: none; }
+.summary > h2:first-child { margin-top: 0; }
 .transcript { margin-top: 50px; padding-top: 30px; border-top: 1px solid var(--line); }
 .transcript-row { display: grid; grid-template-columns: 70px 100px 1fr; gap: 15px; padding: 10px 0; border-bottom: 1px solid #191d1a; font-size: 12px; line-height: 1.5; }
 .transcript-row time, .transcript-row strong { color: var(--muted); }
