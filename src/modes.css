@@ -53,3 +53,7 @@
 .popup footer button:hover { color: var(--accent); }
 .check-row { display: flex; align-items: center; gap: 10px; }
 .check-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+@media (min-width: 381px) {
+  .popup-shell { width: 100%; }
+  .popup { max-width: 440px; margin: 0 auto; }
+}

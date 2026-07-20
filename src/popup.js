@@ -98,3 +98,6 @@ document.querySelectorAll("[data-profile]").forEach((button) => button.addEventL
   render({ active: false });
 }));
 refresh().catch((error) => render({ error: error.message }));
+setInterval(() => {
+  if (document.visibilityState === "visible") refresh().catch(() => {});
+}, 1500);

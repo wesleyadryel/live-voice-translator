@@ -1,5 +1,13 @@
 let offscreenCreating;
 
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+async function setActionState(active, error = false) {
+  await chrome.action.setBadgeBackgroundColor({ color: error ? "#d95c5c" : "#3bd879" });
+  await chrome.action.setBadgeText({ text: error ? "!" : active ? "ON" : "" });
+  await chrome.action.setTitle({ title: error ? "Live Voice Translator — ошибка" : active ? "Live Voice Translator — перевод включён" : "Live Voice Translator" });
+}
+
 async function ensureOffscreenDocument() {
   const url = chrome.runtime.getURL("src/offscreen.html");
   const contexts = await chrome.runtime.getContexts({
@@ -51,18 +59,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         streamId,
         settings
       });
+      await setActionState(Boolean(result?.ok && result?.state?.active), !result?.ok);
       sendResponse(result);
-    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    })().catch(async (error) => {
+      await setActionState(false, true);
+      sendResponse({ ok: false, error: error.message });
+    });
     return true;
   }
 
   if (message.type === "STOP_TRANSLATION" || message.type === "GET_STATUS") {
     (async () => {
       await ensureOffscreenDocument();
-      sendResponse(await chrome.runtime.sendMessage({
+      const result = await chrome.runtime.sendMessage({
         target: "offscreen",
         type: message.type
-      }));
+      });
+      if (message.type === "STOP_TRANSLATION") await setActionState(false);
+      if (message.type === "GET_STATUS") await setActionState(Boolean(result?.state?.active), Boolean(result?.state?.error));
+      sendResponse(result);
     })().catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
