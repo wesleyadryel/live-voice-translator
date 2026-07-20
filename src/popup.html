@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Live Voice Translator</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup-shell">
+  <main class="popup">
+    <header class="brand-row">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div><strong>Live Voice</strong><small>Translator</small></div>
+      <button class="icon-button" id="open-settings" title="Настройки" aria-label="Настройки">⚙</button>
+    </header>
+
+    <section class="status-block">
+      <div class="status-line"><span class="status-dot"></span><span id="status-label">Готов к запуску</span></div>
+      <h1><span id="source-label">Русский</span><i>→</i><span id="target-label">English</span></h1>
+      <p id="hint">Откройте вкладку с конференцией и запустите перевод.</p>
+    </section>
+
+    <div class="wave" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
+
+    <button class="primary-button" id="toggle"><span class="power">●</span><span id="toggle-label">Начать перевод</span></button>
+    <p class="error" id="error" hidden></p>
+    <footer><span id="key-status">API-ключ не настроен</span><span>Open source · MIT</span></footer>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

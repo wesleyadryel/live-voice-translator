@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Настройки — Live Voice Translator</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options-shell">
+  <main class="settings">
+    <header>
+      <div class="brand-row"><div class="brand-mark"><span></span><span></span><span></span></div><div><strong>Live Voice</strong><small>Настройки перевода</small></div></div>
+      <p>Ключ остаётся только на этом устройстве и используется для прямого подключения к OpenAI.</p>
+    </header>
+    <form id="settings-form">
+      <section>
+        <h2>OpenAI API</h2>
+        <label>API-ключ<div class="input-row"><input id="api-key" type="password" autocomplete="off" placeholder="sk-proj-…"><button type="button" class="secondary-button" id="reveal-key">Показать</button></div></label>
+        <p class="help">Создайте отдельный ключ и задайте лимит расходов в кабинете OpenAI.</p>
+      </section>
+      <section class="two-column">
+        <div><h2>Вы говорите</h2><label>Язык<select id="source-language"><option value="Russian">Русский</option><option value="English">English</option><option value="Spanish">Español</option><option value="German">Deutsch</option><option value="French">Français</option></select></label><label>Голос собеседнику<select id="outgoing-voice"><option value="marin">Marin</option><option value="cedar">Cedar</option><option value="alloy">Alloy</option><option value="verse">Verse</option></select></label></div>
+        <div><h2>Вы слышите</h2><label>Язык собеседника<select id="target-language"><option value="English">English</option><option value="Russian">Русский</option><option value="Spanish">Español</option><option value="German">Deutsch</option><option value="French">Français</option></select></label><label>Русский голос вам<select id="incoming-voice"><option value="cedar">Cedar</option><option value="marin">Marin</option><option value="alloy">Alloy</option><option value="verse">Verse</option></select></label></div>
+      </section>
+      <section>
+        <h2>Аудиовыходы</h2>
+        <label>Перевод для собеседника<select id="outgoing-device"><option value="default">Системный выход</option></select></label>
+        <label>Перевод для вас<select id="incoming-device"><option value="default">Системный выход</option></select></label>
+        <p class="help">Для исходящего перевода выберите виртуальный аудиокабель, а его же укажите микрофоном в конференции.</p>
+      </section>
+      <div class="form-actions"><span id="save-status"></span><button class="primary-button" type="submit">Сохранить настройки</button></div>
+    </form>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
