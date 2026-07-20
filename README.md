@@ -8,9 +8,16 @@ and you hear Russian. Translation runs through the user's own OpenAI API key.
 The extension also supports meeting notes. Choose one of four modes before a
 call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
 
+For voice modes choose an audio scenario:
+
+- **Solo test** plays the outgoing translation through the normal speakers so
+  the local user can verify it without another participant.
+- **Conference** requires a virtual audio cable and sends the outgoing
+  translation there. The local user can monitor it at zero, low, or full volume.
+
 ## Status
 
-Version 0.2 is an early macOS/Chrome MVP. The extension captures the conference tab and the
+Version 0.3 is an early macOS/Chrome MVP. The extension captures the conference tab and the
 microphone, creates two OpenAI Realtime sessions, and routes each translated
 audio stream to a selected output device.
 

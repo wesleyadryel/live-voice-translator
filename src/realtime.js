@@ -2,10 +2,11 @@ const REALTIME_MODEL = "gpt-realtime-1.5";
 const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
 
 export class RealtimeTranslator {
-  constructor({ apiKey, inputStream, outputElement, from, to, voice, onState, onTranscript, verbatim = false }) {
+  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, verbatim = false }) {
     this.apiKey = apiKey;
     this.inputStream = inputStream;
     this.outputElement = outputElement;
+    this.monitorElement = monitorElement;
     this.from = from;
     this.to = to;
     this.voice = voice;
@@ -29,6 +30,10 @@ export class RealtimeTranslator {
     pc.ontrack = (event) => {
       this.outputElement.srcObject = event.streams[0];
       this.outputElement.play().catch(() => {});
+      if (this.monitorElement) {
+        this.monitorElement.srcObject = event.streams[0];
+        this.monitorElement.play().catch(() => {});
+      }
     };
 
     pc.onconnectionstatechange = () => {

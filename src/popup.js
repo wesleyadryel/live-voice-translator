@@ -12,6 +12,7 @@ const elements = {
 };
 let active = false;
 let currentMode = "both";
+let currentProfile = "solo";
 
 const MODE_HINTS = {
   translation: "Двусторонний голосовой перевод без сохранения встречи.",
@@ -20,22 +21,36 @@ const MODE_HINTS = {
   transcript: "Сохраним полный текст без перевода голоса."
 };
 
+function friendlyError(error) {
+  const message = error?.message || String(error || "Неизвестная ошибка");
+  if (/Permission dismissed|Permission denied|NotAllowedError/i.test(message)) return "Разрешите микрофон в настройках расширения и повторите запуск";
+  if (/OpenAI 401|invalid.*key|Incorrect API key/i.test(message)) return "OpenAI отклонил API-ключ. Проверьте ключ в настройках";
+  if (/OpenAI 429|quota|rate limit/i.test(message)) return "Достигнут лимит OpenAI API. Проверьте баланс и лимиты проекта";
+  if (/Requested device not found|NotFoundError/i.test(message)) return "Выбранное аудиоустройство больше недоступно. Откройте настройки";
+  if (/Cannot capture|tabCapture|active tab/i.test(message)) return "Откройте вкладку конференции и запускайте расширение именно из неё";
+  return message;
+}
+
 function render(state = {}) {
   active = Boolean(state.active);
   document.body.classList.toggle("is-live", active);
-  elements.toggleLabel.textContent = active ? "Остановить перевод" : "Начать перевод";
+  const startLabels = { translation: "Начать перевод", notes: "Начать конспект", both: "Начать встречу", transcript: "Начать запись" };
+  elements.toggleLabel.textContent = active ? "Остановить" : startLabels[currentMode];
   elements.status.textContent = active ? "Перевод идёт в реальном времени" : "Готов к запуску";
   elements.hint.textContent = active
     ? "Не закрывайте вкладку конференции. Используйте наушники."
     : MODE_HINTS[currentMode];
   elements.error.hidden = !state.error;
   elements.error.textContent = state.error || "";
+  document.querySelector("#profile-switch").hidden = !["translation", "both"].includes(currentMode);
 }
 
 async function refresh() {
   const settings = await loadSettings();
   currentMode = settings.mode;
+  currentProfile = settings.audioProfile;
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
+  document.querySelectorAll("[data-profile]").forEach((button) => button.classList.toggle("active", button.dataset.profile === currentProfile));
   elements.keyStatus.textContent = settings.apiKey ? `Ключ: ${maskKey(settings.apiKey)}` : "API-ключ не настроен";
   elements.source.textContent = settings.sourceLanguage === "Russian" ? "Русский" : settings.sourceLanguage;
   elements.target.textContent = settings.targetLanguage;
@@ -60,7 +75,7 @@ elements.toggle.addEventListener("click", async () => {
       render(result.state);
     }
   } catch (error) {
-    render({ active: false, error: error.message });
+    render({ active: false, error: friendlyError(error) });
   } finally {
     elements.toggle.disabled = false;
   }
@@ -73,6 +88,13 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   currentMode = button.dataset.mode;
   await saveSettings({ mode: currentMode });
   document.querySelectorAll("[data-mode]").forEach((item) => item.classList.toggle("active", item === button));
+  render({ active: false });
+}));
+document.querySelectorAll("[data-profile]").forEach((button) => button.addEventListener("click", async () => {
+  if (active) return;
+  currentProfile = button.dataset.profile;
+  await saveSettings({ audioProfile: currentProfile });
+  document.querySelectorAll("[data-profile]").forEach((item) => item.classList.toggle("active", item === button));
   render({ active: false });
 }));
 refresh().catch((error) => render({ error: error.message }));

@@ -3,6 +3,7 @@ import { RealtimeTranslator } from "./realtime.js";
 
 const incomingOutput = document.querySelector("#incoming-output");
 const outgoingOutput = document.querySelector("#outgoing-output");
+const outgoingMonitor = document.querySelector("#outgoing-monitor");
 let incomingTranslator;
 let outgoingTranslator;
 let microphoneStream;
@@ -104,6 +105,7 @@ async function stop() {
   incomingTranslator = outgoingTranslator = microphoneStream = tabStream = null;
   incomingOutput.srcObject = null;
   outgoingOutput.srcObject = null;
+  outgoingMonitor.srcObject = null;
   meeting = null;
   state = { active: false, phase: capturedMeeting ? "summarizing" : "idle", error: "" };
   const completedMeeting = capturedMeeting && MODES[capturedMeeting.mode]?.notes
@@ -144,13 +146,17 @@ async function start(streamId, suppliedSettings = {}) {
 
   await applySink(outgoingOutput, settings.outgoingDeviceId);
   await applySink(incomingOutput, settings.incomingDeviceId);
+  await applySink(outgoingMonitor, settings.incomingDeviceId);
   outgoingOutput.muted = !mode.audio;
   incomingOutput.muted = !mode.audio;
+  outgoingMonitor.muted = !mode.audio || settings.audioProfile !== "conference" || settings.monitorLevel === "off";
+  outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
 
   outgoingTranslator = new RealtimeTranslator({
     apiKey: settings.apiKey,
     inputStream: microphoneStream,
     outputElement: outgoingOutput,
+    monitorElement: outgoingMonitor,
     from: settings.sourceLanguage,
     to: settings.targetLanguage,
     voice: settings.outgoingVoice,

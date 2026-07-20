@@ -20,6 +20,27 @@
 }
 .mode-switch button.active { background: #29312b; color: var(--accent); }
 .is-live .mode-switch { pointer-events: none; opacity: .55; }
+.profile-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+.profile-switch[hidden] { display: none; }
+.profile-switch button {
+  padding: 8px 9px;
+  border: 1px solid #242a26;
+  border-radius: 10px;
+  background: transparent;
+  color: #768078;
+  text-align: left;
+  cursor: pointer;
+}
+.profile-switch strong, .profile-switch small { display: block; }
+.profile-switch strong { color: inherit; font-size: 10px; }
+.profile-switch small { margin-top: 3px; font-size: 8px; }
+.profile-switch button.active { border-color: #4e6656; background: rgba(108,245,155,.06); color: var(--accent); }
+.is-live .profile-switch { pointer-events: none; opacity: .55; }
 .wave { height: 54px; margin: 10px 0; }
 .popup footer button {
   padding: 0;

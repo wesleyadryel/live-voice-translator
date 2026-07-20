@@ -36,6 +36,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       await ensureOffscreenDocument();
       const settings = await chrome.storage.local.get();
+      if (["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
+        throw new Error("Для режима «Конференция» выберите виртуальный аудиокабель в настройках");
+      }
+      if (["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && settings.outgoingDeviceId === settings.incomingDeviceId) {
+        throw new Error("Выход собеседнику и выход для вас должны быть разными устройствами");
+      }
       const streamId = await chrome.tabCapture.getMediaStreamId({
         targetTabId: message.tabId
       });

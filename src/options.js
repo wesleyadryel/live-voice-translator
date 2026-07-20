@@ -31,6 +31,7 @@ async function init() {
   ids("incoming-voice").value = settings.incomingVoice;
   ids("summary-detail").value = settings.summaryDetail;
   ids("save-transcript").checked = settings.saveTranscript;
+  ids("monitor-level").value = settings.monitorLevel;
   await listOutputs(settings.outgoingDeviceId, settings.incomingDeviceId);
 }
 
@@ -55,6 +56,7 @@ ids("settings-form").addEventListener("submit", async (event) => {
     incomingVoice: ids("incoming-voice").value,
     summaryDetail: ids("summary-detail").value,
     saveTranscript: ids("save-transcript").checked,
+    monitorLevel: ids("monitor-level").value,
     outgoingDeviceId: ids("outgoing-device").value,
     incomingDeviceId: ids("incoming-device").value
   });

@@ -1,12 +1,14 @@
 export const DEFAULT_SETTINGS = {
   apiKey: "",
   mode: "both",
+  audioProfile: "solo",
   sourceLanguage: "Russian",
   targetLanguage: "English",
   outgoingVoice: "marin",
   incomingVoice: "cedar",
   outgoingDeviceId: "default",
   incomingDeviceId: "default",
+  monitorLevel: "off",
   summaryDetail: "standard",
   saveTranscript: true
 };
