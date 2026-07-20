@@ -6,40 +6,87 @@
   <title>Live Voice Translator</title>
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="modes.css">
+  <link rel="stylesheet" href="release.css">
 </head>
-<body class="popup-shell">
-  <main class="popup">
-    <header class="brand-row">
-      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-      <div><strong>Live Voice</strong><small>Translator</small></div>
-      <button class="icon-button" id="open-settings" title="Настройки" aria-label="Настройки">⚙</button>
+<body class="panel-shell">
+  <main class="control-panel">
+    <header class="mac-toolbar">
+      <div class="app-identity">
+        <small>LIVE VOICE</small><strong>Переводчик встречи</strong>
+      </div>
+      <div class="toolbar-actions">
+        <button class="toolbar-text-button" id="open-history">История</button>
+        <button class="toolbar-button" id="open-settings" aria-label="Открыть настройки" title="Настройки">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l2-1.6-2-3.4-2.5 1a8 8 0 0 0-2.6-1.5L14 2.4h-4L9.6 5a8 8 0 0 0-2.6 1.5l-2.5-1-2 3.4 2 1.6a7.8 7.8 0 0 0 0 3l-2 1.6 2 3.4 2.5-1A8 8 0 0 0 9.6 19l.4 2.6h4l.4-2.6a8 8 0 0 0 2.6-1.5l2.5 1 2-3.4-2.1-1.6Z"/></svg>
+        </button>
+      </div>
     </header>
 
-    <section class="status-block">
-      <div class="status-line"><span class="status-dot"></span><span id="status-label">Готов к запуску</span></div>
-      <h1><span id="source-label">Русский</span><i>→</i><span id="target-label">English</span></h1>
-      <p id="hint">Откройте вкладку с конференцией и запустите перевод.</p>
+    <section class="setup-banner" id="setup-banner" hidden>
+      <div><strong>Подключите OpenAI</strong><p id="setup-copy">Добавьте API-ключ, чтобы начать перевод.</p></div>
+      <button id="setup-action">Настроить</button>
     </section>
 
-    <nav class="mode-switch" aria-label="Режим работы">
-      <button data-mode="translation">Перевод</button>
-      <button data-mode="notes">Конспект</button>
-      <button data-mode="both">Вместе</button>
-      <button data-mode="transcript">Текст</button>
-    </nav>
+    <section class="session-surface" aria-live="polite">
+      <div class="session-meta">
+        <span class="phase-pill" id="phase-pill"><i></i><span id="status-label">Готов</span></span>
+        <time id="session-timer" datetime="PT0S">00:00</time>
+      </div>
+      <div class="language-route">
+        <div><span>Вы</span><strong id="source-label">Русский</strong></div>
+        <svg viewBox="0 0 40 20" aria-hidden="true"><path d="M3 10h30m-6-6 6 6-6 6"/></svg>
+        <div class="align-right"><span>Собеседник</span><strong id="target-label">English</strong></div>
+      </div>
+      <div class="audio-visual" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <p class="session-hint" id="hint">Выберите режим и запустите встречу.</p>
+    </section>
 
-    <nav class="profile-switch" id="profile-switch" aria-label="Сценарий звука">
-      <button data-profile="solo"><strong>Проверка</strong><small>Слышите перевод сами</small></button>
-      <button data-profile="conference"><strong>Конференция</strong><small>Перевод идёт собеседнику</small></button>
-    </nav>
+    <section class="control-section">
+      <div class="section-label"><span>Режим работы</span></div>
+      <nav class="mac-segmented" aria-label="Режим работы">
+        <button data-mode="translation">Перевод</button>
+        <button data-mode="notes">Конспект</button>
+        <button data-mode="both">Вместе</button>
+        <button data-mode="transcript">Текст</button>
+      </nav>
+    </section>
 
-    <div class="wave" aria-hidden="true">
-      <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+    <section class="control-section" id="profile-switch">
+      <div class="section-label"><span>Аудиомаршрут</span></div>
+      <div class="scenario-list">
+        <button data-profile="solo"><span class="scenario-icon"><svg viewBox="0 0 24 24"><path d="M5 9v6m4-9v12m4-15v18m4-13v8m4-5v2"/></svg></span><span><strong>Проверка в одиночку</strong><small>Перевод прозвучит на этом Mac</small></span><i></i></button>
+        <button data-profile="conference"><span class="scenario-icon"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 2a3 3 0 1 0 0-6m-8 7c-4 0-6 2-6 5h12c0-3-2-5-6-5Zm8 1c3 0 5 1.5 5 4h-5"/></svg></span><span><strong>Конференция</strong><small>Голос направляется собеседнику</small></span><i></i></button>
+      </div>
+    </section>
+
+    <section class="preflight" id="preflight" aria-label="Готовность системы">
+      <div data-check="api"><i></i><span>OpenAI</span><small>Проверка…</small></div>
+      <div data-check="microphone"><i></i><span>Микрофон</span><small>Проверка…</small></div>
+      <div data-check="route"><i></i><span>Маршрут</span><small>Проверка…</small></div>
+    </section>
+
+    <div class="notice" id="recording-notice" hidden>
+      <p>В режимах с конспектом аудио отправляется в OpenAI. История хранится локально.</p>
+      <button id="accept-notice">Понятно</button>
     </div>
 
-    <button class="primary-button" id="toggle"><span class="power">●</span><span id="toggle-label">Начать перевод</span></button>
-    <p class="error" id="error" hidden></p>
-    <footer><span id="key-status">API-ключ не настроен</span><button id="open-history">История встреч</button></footer>
+    <div class="error-callout" id="error" role="alert" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3.5v.1M10.3 3.6 2.5 17.1A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.9L13.7 3.6a2 2 0 0 0-3.4 0Z"/></svg>
+      <span id="error-copy"></span><button id="error-settings">Исправить</button>
+    </div>
+
+    <button class="session-button" id="toggle">
+      <span class="button-symbol"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z"/></svg></span>
+      <span id="toggle-label">Начать встречу</span>
+      <span class="button-progress" aria-hidden="true"></span>
+    </button>
+
+    <footer class="panel-footer">
+      <span id="usage-label">Использовано 0 мин</span>
+      <span id="key-status">API не настроен</span>
+    </footer>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

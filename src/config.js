@@ -10,7 +10,12 @@ export const DEFAULT_SETTINGS = {
   incomingDeviceId: "default",
   monitorLevel: "off",
   summaryDetail: "standard",
-  saveTranscript: true
+  saveTranscript: true,
+  retentionDays: 30,
+  maxSessionMinutes: 90,
+  recordingNoticeAccepted: false,
+  usageSeconds: 0,
+  sessionCount: 0
 };
 
 export async function loadSettings() {

@@ -32,6 +32,8 @@ async function init() {
   ids("summary-detail").value = settings.summaryDetail;
   ids("save-transcript").checked = settings.saveTranscript;
   ids("monitor-level").value = settings.monitorLevel;
+  ids("retention-days").value = String(settings.retentionDays || 30);
+  ids("max-session-minutes").value = String(settings.maxSessionMinutes || 90);
   await listOutputs(settings.outgoingDeviceId, settings.incomingDeviceId);
 }
 
@@ -39,6 +41,25 @@ ids("reveal-key").addEventListener("click", () => {
   const input = ids("api-key");
   input.type = input.type === "password" ? "text" : "password";
   ids("reveal-key").textContent = input.type === "password" ? "Показать" : "Скрыть";
+});
+
+ids("test-key").addEventListener("click", async () => {
+  const button = ids("test-key");
+  const status = ids("api-test-status");
+  const apiKey = ids("api-key").value.trim();
+  if (!apiKey) { status.textContent = "Введите ключ"; return; }
+  button.disabled = true;
+  status.textContent = "Проверяем…";
+  try {
+    await saveSettings({ apiKey });
+    const result = await chrome.runtime.sendMessage({ type: "TEST_API_KEY" });
+    if (!result?.ok) throw new Error(result?.error || "Проверка не прошла");
+    status.textContent = "OpenAI доступен";
+  } catch (error) {
+    status.textContent = `Ошибка: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
 });
 
 ids("settings-form").addEventListener("submit", async (event) => {
@@ -58,7 +79,9 @@ ids("settings-form").addEventListener("submit", async (event) => {
     saveTranscript: ids("save-transcript").checked,
     monitorLevel: ids("monitor-level").value,
     outgoingDeviceId: ids("outgoing-device").value,
-    incomingDeviceId: ids("incoming-device").value
+    incomingDeviceId: ids("incoming-device").value,
+    retentionDays: Number(ids("retention-days").value),
+    maxSessionMinutes: Number(ids("max-session-minutes").value)
   });
   ids("save-status").textContent = "Сохранено";
   setTimeout(() => { ids("save-status").textContent = ""; }, 1800);

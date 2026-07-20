@@ -8,9 +8,25 @@ let incomingTranslator;
 let outgoingTranslator;
 let microphoneStream;
 let tabStream;
-let state = { active: false, phase: "idle", error: "" };
+let state = freshState();
 let meeting = null;
 let activeSettings = { ...DEFAULT_SETTINGS };
+let sessionStartedAt = 0;
+let sessionTimer = null;
+let reconnectTimer = null;
+let reconnecting = false;
+let generation = 0;
+
+const MODES = {
+  translation: { audio: true, notes: false, summary: false },
+  notes: { audio: false, notes: true, summary: true },
+  both: { audio: true, notes: true, summary: true },
+  transcript: { audio: false, notes: true, summary: false }
+};
+
+function freshState(overrides = {}) {
+  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, reconnectAttempt: 0, ...overrides };
+}
 
 async function storageGet(defaults = {}) {
   const result = await chrome.runtime.sendMessage({ type: "STORAGE_GET", defaults });
@@ -23,46 +39,27 @@ async function storageSet(value) {
   if (!result?.ok) throw new Error(result?.error || "Не удалось сохранить локальные данные");
 }
 
-const MODES = {
-  translation: { audio: true, notes: false, summary: false },
-  notes: { audio: false, notes: true, summary: true },
-  both: { audio: true, notes: true, summary: true },
-  transcript: { audio: false, notes: true, summary: false }
-};
-
 function addTranscript(speaker, text, language) {
   if (!meeting || !text) return;
-  meeting.transcript.push({
-    speaker,
-    text,
-    language,
-    offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000))
-  });
+  meeting.transcript.push({ speaker, text, language, offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000)) });
+  state.transcriptCount = meeting.transcript.length;
 }
 
 function responseText(payload) {
   if (typeof payload.output_text === "string") return payload.output_text;
-  return (payload.output || []).flatMap((item) => item.content || [])
-    .filter((item) => item.type === "output_text")
-    .map((item) => item.text || "")
-    .join("\n").trim();
+  return (payload.output || []).flatMap((item) => item.content || []).filter((item) => item.type === "output_text").map((item) => item.text || "").join("\n").trim();
 }
 
 async function createSummary(settings, currentMeeting) {
-  const lines = currentMeeting.transcript.map((item) =>
-    `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`
-  ).join("\n");
+  const lines = currentMeeting.transcript.map((item) => `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`).join("\n");
   if (!lines) return "Недостаточно распознанной речи для конспекта.";
   const detail = settings.summaryDetail === "brief" ? "краткий" : settings.summaryDetail === "detailed" ? "подробный" : "сбалансированный";
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${settings.apiKey}`,
-      "Content-Type": "application/json"
-    },
+    headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-5.6-sol",
-      instructions: `Создай ${detail} конспект встречи на русском языке в Markdown. Обязательно используй разделы: Краткое содержание, Основные темы, Принятые решения, Задачи и ответственные, Сроки, Открытые вопросы. Не придумывай отсутствующие факты; если раздел пуст, напиши «Не зафиксировано».`,
+      instructions: `Создай ${detail} конспект встречи на русском языке в Markdown. Используй разделы: Краткое содержание, Основные темы, Принятые решения, Задачи и ответственные, Сроки, Открытые вопросы. Не придумывай факты; если раздел пуст, напиши «Не зафиксировано».`,
       input: lines
     })
   });
@@ -72,47 +69,109 @@ async function createSummary(settings, currentMeeting) {
 
 async function saveMeeting(settings, currentMeeting) {
   const finishedAt = Date.now();
-  const record = {
-    ...currentMeeting,
-    finishedAt,
-    durationSeconds: Math.round((finishedAt - currentMeeting.startedAt) / 1000),
-    summary: ""
-  };
+  const record = { ...currentMeeting, finishedAt, durationSeconds: Math.round((finishedAt - currentMeeting.startedAt) / 1000), summary: "" };
   if (!settings.saveTranscript) record.transcript = [];
-  const mode = MODES[currentMeeting.mode];
-  if (mode.summary) {
+  if (MODES[currentMeeting.mode].summary) {
     try { record.summary = await createSummary(settings, currentMeeting); }
     catch (error) { record.summary = `> Конспект не создан: ${error.message}`; }
   }
   const { meetings = [] } = await storageGet({ meetings: [] });
-  await storageSet({ meetings: [record, ...meetings].slice(0, 50), lastMeetingId: record.id });
+  const cutoff = finishedAt - Math.max(1, Number(settings.retentionDays) || 30) * 86400000;
+  const retained = meetings.filter((item) => Number(item.startedAt) >= cutoff);
+  await storageSet({ meetings: [record, ...retained].slice(0, 100), lastMeetingId: record.id });
   return record;
 }
 
 async function applySink(element, deviceId) {
-  if (deviceId && deviceId !== "default" && "setSinkId" in element) {
-    await element.setSinkId(deviceId);
-  }
+  if (deviceId && deviceId !== "default" && "setSinkId" in element) await element.setSinkId(deviceId);
 }
 
-async function stop() {
+function clearLifecycleTimers() {
+  clearTimeout(sessionTimer);
+  clearTimeout(reconnectTimer);
+  sessionTimer = reconnectTimer = null;
+}
+
+async function stop({ reason = "user", notify = false, error = "", persist = true } = {}) {
   const settings = activeSettings;
   const capturedMeeting = meeting;
+  const capturedStartedAt = sessionStartedAt;
+  const durationSeconds = capturedStartedAt ? Math.max(0, Math.round((Date.now() - capturedStartedAt) / 1000)) : 0;
+  const hadActiveSession = state.active;
+  generation += 1;
+  reconnecting = false;
+  clearLifecycleTimers();
+  state = { ...state, active: false };
   incomingTranslator?.close();
   outgoingTranslator?.close();
   microphoneStream?.getTracks().forEach((track) => track.stop());
   tabStream?.getTracks().forEach((track) => track.stop());
   incomingTranslator = outgoingTranslator = microphoneStream = tabStream = null;
-  incomingOutput.srcObject = null;
-  outgoingOutput.srcObject = null;
-  outgoingMonitor.srcObject = null;
+  incomingOutput.srcObject = outgoingOutput.srcObject = outgoingMonitor.srcObject = null;
   meeting = null;
-  state = { active: false, phase: capturedMeeting ? "summarizing" : "idle", error: "" };
-  const completedMeeting = capturedMeeting && MODES[capturedMeeting.mode]?.notes
-    ? await saveMeeting(settings, capturedMeeting)
-    : null;
-  state = { active: false, phase: "idle", error: "" };
-  return { ok: true, state, meetingId: completedMeeting?.id || null };
+  sessionStartedAt = 0;
+  state = freshState({ phase: capturedMeeting ? "summarizing" : "idle", durationSeconds, transcriptCount: state.transcriptCount });
+  const completedMeeting = persist && capturedMeeting && MODES[capturedMeeting.mode]?.notes ? await saveMeeting(settings, capturedMeeting) : null;
+  if (hadActiveSession && durationSeconds > 0) {
+    const usage = await storageGet({ usageSeconds: 0, sessionCount: 0 });
+    await storageSet({ usageSeconds: Number(usage.usageSeconds || 0) + durationSeconds, sessionCount: Number(usage.sessionCount || 0) + 1 });
+  }
+  state = freshState({
+    phase: reason === "limit" ? "limit" : error ? "error" : "idle",
+    error: error || (reason === "limit" ? `Сеанс остановлен по лимиту ${settings.maxSessionMinutes} мин.` : ""),
+    durationSeconds,
+    transcriptCount: state.transcriptCount
+  });
+  const result = { ok: true, state, meetingId: completedMeeting?.id || null, reason };
+  if (notify) chrome.runtime.sendMessage({ type: "SESSION_ENDED", result }).catch(() => {});
+  return result;
+}
+
+function translatorOptions(settings, mode, outgoing) {
+  return {
+    apiKey: settings.apiKey,
+    inputStream: outgoing ? microphoneStream : tabStream,
+    outputElement: outgoing ? outgoingOutput : incomingOutput,
+    monitorElement: outgoing ? outgoingMonitor : null,
+    from: outgoing ? settings.sourceLanguage : settings.targetLanguage,
+    to: outgoing ? settings.targetLanguage : settings.sourceLanguage,
+    voice: outgoing ? settings.outgoingVoice : settings.incomingVoice,
+    verbatim: !mode.audio,
+    onTranscript: (text) => addTranscript(outgoing ? "Вы" : "Собеседник", text, mode.audio ? (outgoing ? settings.targetLanguage : settings.sourceLanguage) : (outgoing ? settings.sourceLanguage : settings.targetLanguage)),
+    onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
+    onDisconnect: () => scheduleReconnect(settings, mode)
+  };
+}
+
+async function connectPair(settings, mode) {
+  outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
+  incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
+  await Promise.all([outgoingTranslator.connect(), incomingTranslator.connect()]);
+}
+
+function scheduleReconnect(settings, mode) {
+  if (!state.active || reconnecting) return;
+  reconnecting = true;
+  const expectedGeneration = generation;
+  const attempt = Math.min(5, Number(state.reconnectAttempt || 0) + 1);
+  state = { ...state, phase: "reconnecting", reconnectAttempt: attempt, error: "" };
+  outgoingTranslator?.close();
+  incomingTranslator?.close();
+  reconnectTimer = setTimeout(async () => {
+    if (!state.active || expectedGeneration !== generation) return;
+    try {
+      await connectPair(settings, mode);
+      if (expectedGeneration !== generation) return;
+      reconnecting = false;
+      state = { ...state, phase: "live", reconnectAttempt: 0, error: "" };
+    } catch (error) {
+      reconnecting = false;
+      if (attempt < 5) scheduleReconnect(settings, mode);
+      else {
+        await stop({ reason: "connection", error: `Не удалось восстановить связь: ${error.message}`, notify: true });
+      }
+    }
+  }, Math.min(16000, 1000 * 2 ** (attempt - 1)));
 }
 
 async function start(streamId, suppliedSettings = {}) {
@@ -121,68 +180,27 @@ async function start(streamId, suppliedSettings = {}) {
   activeSettings = settings;
   if (!settings.apiKey) throw new Error("Сначала добавьте OpenAI API-ключ в настройках");
   const mode = MODES[settings.mode] || MODES.both;
-  meeting = mode.notes ? {
-    id: crypto.randomUUID(),
-    title: `Встреча ${new Date().toLocaleString("ru-RU")}`,
-    startedAt: Date.now(),
-    mode: settings.mode,
-    languages: [settings.sourceLanguage, settings.targetLanguage],
-    transcript: []
-  } : null;
-  state = { active: true, phase: "connecting", error: "" };
-
-  microphoneStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-  });
-  tabStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId
-      }
-    },
-    video: false
-  });
-
-  await applySink(outgoingOutput, settings.outgoingDeviceId);
-  await applySink(incomingOutput, settings.incomingDeviceId);
-  await applySink(outgoingMonitor, settings.incomingDeviceId);
-  outgoingOutput.muted = !mode.audio;
-  incomingOutput.muted = !mode.audio;
-  outgoingMonitor.muted = !mode.audio || settings.audioProfile !== "conference" || settings.monitorLevel === "off";
-  outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
-
-  outgoingTranslator = new RealtimeTranslator({
-    apiKey: settings.apiKey,
-    inputStream: microphoneStream,
-    outputElement: outgoingOutput,
-    monitorElement: outgoingMonitor,
-    from: settings.sourceLanguage,
-    to: settings.targetLanguage,
-    voice: settings.outgoingVoice,
-    verbatim: !mode.audio,
-    onTranscript: (text) => addTranscript("Вы", text, mode.audio ? settings.targetLanguage : settings.sourceLanguage),
-    onState: (phase) => { state.phase = phase; }
-  });
-  incomingTranslator = new RealtimeTranslator({
-    apiKey: settings.apiKey,
-    inputStream: tabStream,
-    outputElement: incomingOutput,
-    from: settings.targetLanguage,
-    to: settings.sourceLanguage,
-    voice: settings.incomingVoice,
-    verbatim: !mode.audio,
-    onTranscript: (text) => addTranscript("Собеседник", text, mode.audio ? settings.sourceLanguage : settings.targetLanguage),
-    onState: (phase) => { state.phase = phase; }
-  });
-
+  sessionStartedAt = Date.now();
+  meeting = mode.notes ? { id: crypto.randomUUID(), title: `Встреча ${new Date().toLocaleString("ru-RU")}`, startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
+  state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
-    await Promise.all([outgoingTranslator.connect(), incomingTranslator.connect()]);
+    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } }, video: false });
+    tabStream.getTracks().forEach((track) => { track.onended = () => { if (state.active) stop({ reason: "tab_closed", notify: true }); }; });
+    await applySink(outgoingOutput, settings.outgoingDeviceId);
+    await applySink(incomingOutput, settings.incomingDeviceId);
+    await applySink(outgoingMonitor, settings.incomingDeviceId);
+    outgoingOutput.muted = incomingOutput.muted = !mode.audio;
+    outgoingMonitor.muted = !mode.audio || settings.audioProfile !== "conference" || settings.monitorLevel === "off";
+    outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
+    generation += 1;
+    await connectPair(settings, mode);
     state.phase = "live";
+    sessionTimer = setTimeout(() => stop({ reason: "limit", notify: true }), Math.max(1, Number(settings.maxSessionMinutes) || 90) * 60000);
     return { ok: true, state };
   } catch (error) {
-    await stop();
-    state = { active: false, phase: "error", error: error.message };
+    await stop({ reason: "error", persist: false });
+    state = freshState({ phase: "error", error: error.message });
     throw error;
   }
 }
@@ -193,11 +211,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true, state });
     return false;
   }
-  const action = message.type === "START_TRANSLATION"
-    ? start(message.streamId, message.settings)
-    : message.type === "STOP_TRANSLATION"
-      ? stop()
-      : Promise.resolve({ ok: false, error: "Unknown command" });
+  const action = message.type === "START_TRANSLATION" ? start(message.streamId, message.settings) : message.type === "STOP_TRANSLATION" ? stop() : Promise.resolve({ ok: false, error: "Unknown command" });
   action.then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });

@@ -17,6 +17,7 @@
       <section>
         <h2>OpenAI API</h2>
         <label>API-ключ<div class="input-row"><input id="api-key" type="password" autocomplete="off" placeholder="sk-proj-…"><button type="button" class="secondary-button" id="reveal-key">Показать</button></div></label>
+        <div class="input-row"><button type="button" class="secondary-button" id="test-key">Проверить подключение</button><span id="api-test-status" aria-live="polite"></span></div>
         <p class="help">Создайте отдельный ключ и задайте лимит расходов в кабинете OpenAI.</p>
       </section>
       <section class="two-column">
@@ -34,7 +35,9 @@
         <h2>Конспект встречи</h2>
         <label>Подробность<select id="summary-detail"><option value="brief">Краткий</option><option value="standard">Стандартный</option><option value="detailed">Подробный</option></select></label>
         <label class="check-row"><input id="save-transcript" type="checkbox">Сохранять полный текст встречи локально</label>
-        <p class="help">Хранятся последние 50 встреч. Историю можно удалить в любой момент.</p>
+        <label>Хранить историю<select id="retention-days"><option value="7">7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option><option value="365">1 год</option></select></label>
+        <label>Лимит одной сессии<select id="max-session-minutes"><option value="30">30 минут</option><option value="60">1 час</option><option value="90">1 час 30 минут</option><option value="120">2 часа</option><option value="180">3 часа</option></select></label>
+        <p class="help">История и транскрипции хранятся только в Chrome на этом Mac. Их можно удалить в любой момент.</p>
       </section>
       <div class="form-actions"><span id="save-status"></span><button class="primary-button" type="submit">Сохранить настройки</button></div>
     </form>

@@ -2,7 +2,7 @@ const REALTIME_MODEL = "gpt-realtime-1.5";
 const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
 
 export class RealtimeTranslator {
-  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, verbatim = false }) {
+  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, verbatim = false }) {
     this.apiKey = apiKey;
     this.inputStream = inputStream;
     this.outputElement = outputElement;
@@ -12,14 +12,18 @@ export class RealtimeTranslator {
     this.voice = voice;
     this.onState = onState || (() => {});
     this.onTranscript = onTranscript || (() => {});
+    this.onDisconnect = onDisconnect || (() => {});
     this.verbatim = verbatim;
     this.transcriptBuffer = "";
     this.pc = null;
     this.dataChannel = null;
+    this.closedByUser = false;
+    this.wasConnected = false;
   }
 
   async connect() {
     this.onState("connecting");
+    this.closedByUser = false;
     const pc = new RTCPeerConnection();
     this.pc = pc;
 
@@ -38,7 +42,11 @@ export class RealtimeTranslator {
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
+      if (state === "connected") this.wasConnected = true;
       this.onState(state === "connected" ? "live" : state);
+      if (!this.closedByUser && this.wasConnected && ["disconnected", "failed"].includes(state)) {
+        this.onDisconnect(state);
+      }
     };
 
     const dc = pc.createDataChannel("oai-events");
@@ -104,6 +112,7 @@ export class RealtimeTranslator {
   }
 
   close() {
+    this.closedByUser = true;
     this.dataChannel?.close();
     this.pc?.close();
     this.pc = null;

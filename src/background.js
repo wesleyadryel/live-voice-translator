@@ -40,6 +40,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.target === "offscreen") return false;
 
+  if (message.type === "SESSION_ENDED") {
+    setActionState(false, Boolean(message.result?.state?.error)).catch(() => {});
+    return false;
+  }
+
+  if (message.type === "TEST_API_KEY") {
+    (async () => {
+      const { apiKey = "" } = await chrome.storage.local.get({ apiKey: "" });
+      if (!apiKey) throw new Error("API-ключ не указан");
+      const response = await fetch("https://api.openai.com/v1/models/gpt-realtime-1.5", {
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      if (!response.ok) throw new Error(`OpenAI ${response.status}: ${await response.text()}`);
+      sendResponse({ ok: true });
+    })().catch((error) => sendResponse({ ok: false, error: error.message.slice(0, 240) }));
+    return true;
+  }
+
   if (message.type === "START_TRANSLATION") {
     (async () => {
       await ensureOffscreenDocument();

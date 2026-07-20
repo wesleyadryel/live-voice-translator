@@ -21,9 +21,7 @@ For voice modes choose an audio scenario:
 
 ## Status
 
-Version 0.4 is an early macOS/Chrome MVP. The extension captures the conference tab and the
-microphone, creates two OpenAI Realtime sessions, and routes each translated
-audio stream to a selected output device.
+Version 0.5 is a release-candidate source build for macOS/Chrome. It captures the conference tab and microphone, creates two OpenAI Realtime sessions, routes translated audio to selected outputs, tracks session duration locally, retries a dropped Realtime connection, limits long-running sessions, and retains notes for a user-selected period.
 
 ## Requirements
 
@@ -46,8 +44,7 @@ audio stream to a selected output device.
 
 When a notes mode is selected, stopping the session opens the meeting history.
 The extension can create a Russian Markdown summary with decisions, tasks,
-deadlines, and open questions. The latest 50 meetings are kept locally and can
-be copied, downloaded, or deleted.
+deadlines, and open questions. History is kept locally for the chosen retention period and can be copied, downloaded, or deleted.
 
 Use headphones. Without them the conference audio can feed back into the
 microphone and be translated repeatedly.
@@ -64,14 +61,15 @@ project spending limit.
 
 - Chrome extensions cannot expose a new microphone device. A virtual audio
   cable is required for outgoing translated speech.
-- The current MVP sends a user-provided long-lived API key directly to the
-  Realtime endpoint. Do not use an unrestricted production key.
+- This build sends a user-provided long-lived API key directly to the Realtime endpoint. Do not use an unrestricted production key. See [SECURITY.md](SECURITY.md).
 - Browser permission prompts and audio device labels vary by operating system.
 - Meet is the first target. Telemost and browser Zoom need live compatibility
   verification.
 - OpenAI API usage is billed to the key owner; the extension itself is free.
 - Speaker labels currently distinguish the local microphone from the conference
   tab; identifying individual remote participants is not implemented yet.
+
+Read [PRIVACY.md](PRIVACY.md) and complete [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before publishing a packaged build.
 
 ## License
 
