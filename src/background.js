@@ -18,18 +18,32 @@ async function ensureOffscreenDocument() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "STORAGE_GET") {
+    chrome.storage.local.get(message.defaults || {}).then((value) => sendResponse({ ok: true, value }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "STORAGE_SET") {
+    chrome.storage.local.set(message.value || {}).then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (message.target === "offscreen") return false;
 
   if (message.type === "START_TRANSLATION") {
     (async () => {
       await ensureOffscreenDocument();
+      const settings = await chrome.storage.local.get();
       const streamId = await chrome.tabCapture.getMediaStreamId({
         targetTabId: message.tabId
       });
       const result = await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "START_TRANSLATION",
-        streamId
+        streamId,
+        settings
       });
       sendResponse(result);
     })().catch((error) => sendResponse({ ok: false, error: error.message }));

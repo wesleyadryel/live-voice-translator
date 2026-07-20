@@ -1,4 +1,4 @@
-import { loadSettings } from "./config.js";
+import { DEFAULT_SETTINGS } from "./config.js";
 import { RealtimeTranslator } from "./realtime.js";
 
 const incomingOutput = document.querySelector("#incoming-output");
@@ -9,6 +9,18 @@ let microphoneStream;
 let tabStream;
 let state = { active: false, phase: "idle", error: "" };
 let meeting = null;
+let activeSettings = { ...DEFAULT_SETTINGS };
+
+async function storageGet(defaults = {}) {
+  const result = await chrome.runtime.sendMessage({ type: "STORAGE_GET", defaults });
+  if (!result?.ok) throw new Error(result?.error || "Не удалось прочитать локальные данные");
+  return result.value;
+}
+
+async function storageSet(value) {
+  const result = await chrome.runtime.sendMessage({ type: "STORAGE_SET", value });
+  if (!result?.ok) throw new Error(result?.error || "Не удалось сохранить локальные данные");
+}
 
 const MODES = {
   translation: { audio: true, notes: false, summary: false },
@@ -71,8 +83,8 @@ async function saveMeeting(settings, currentMeeting) {
     try { record.summary = await createSummary(settings, currentMeeting); }
     catch (error) { record.summary = `> Конспект не создан: ${error.message}`; }
   }
-  const { meetings = [] } = await chrome.storage.local.get({ meetings: [] });
-  await chrome.storage.local.set({ meetings: [record, ...meetings].slice(0, 50), lastMeetingId: record.id });
+  const { meetings = [] } = await storageGet({ meetings: [] });
+  await storageSet({ meetings: [record, ...meetings].slice(0, 50), lastMeetingId: record.id });
   return record;
 }
 
@@ -83,7 +95,7 @@ async function applySink(element, deviceId) {
 }
 
 async function stop() {
-  const settings = await loadSettings();
+  const settings = activeSettings;
   const capturedMeeting = meeting;
   incomingTranslator?.close();
   outgoingTranslator?.close();
@@ -101,9 +113,10 @@ async function stop() {
   return { ok: true, state, meetingId: completedMeeting?.id || null };
 }
 
-async function start(streamId) {
+async function start(streamId, suppliedSettings = {}) {
   await stop();
-  const settings = await loadSettings();
+  const settings = { ...DEFAULT_SETTINGS, ...suppliedSettings };
+  activeSettings = settings;
   if (!settings.apiKey) throw new Error("Сначала добавьте OpenAI API-ключ в настройках");
   const mode = MODES[settings.mode] || MODES.both;
   meeting = mode.notes ? {
@@ -175,7 +188,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   const action = message.type === "START_TRANSLATION"
-    ? start(message.streamId)
+    ? start(message.streamId, message.settings)
     : message.type === "STOP_TRANSLATION"
       ? stop()
       : Promise.resolve({ ok: false, error: "Unknown command" });
