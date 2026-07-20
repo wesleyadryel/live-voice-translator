@@ -2,6 +2,7 @@ import { loadSettings, saveSettings } from "./config.js";
 import { localizePage, t } from "./i18n.js";
 
 const ids = (name) => document.querySelector(`#${name}`);
+const SUMMARY_SECTION_IDS = ["overview", "topics", "decisions", "tasks", "deadlines", "owners", "questions"];
 
 async function listOutputs(selectedOutgoing, selectedIncoming) {
   try {
@@ -34,6 +35,9 @@ async function init() {
   ids("outgoing-voice").value = settings.outgoingVoice;
   ids("incoming-voice").value = settings.incomingVoice;
   ids("summary-detail").value = settings.summaryDetail;
+  const summarySections = { overview: true, topics: true, decisions: true, tasks: true, deadlines: true, owners: true, questions: true, ...(settings.summarySections || {}) };
+  SUMMARY_SECTION_IDS.forEach((section) => { ids(`summary-${section}`).checked = Boolean(summarySections[section]); });
+  ids("speaker-diarization").checked = settings.speakerDiarization !== false;
   ids("save-transcript").checked = settings.saveTranscript;
   ids("monitor-level").value = settings.monitorLevel;
   ids("retention-days").value = String(settings.retentionDays || 30);
@@ -85,6 +89,8 @@ ids("settings-form").addEventListener("submit", async (event) => {
     outgoingVoice: ids("outgoing-voice").value,
     incomingVoice: ids("incoming-voice").value,
     summaryDetail: ids("summary-detail").value,
+    summarySections: Object.fromEntries(SUMMARY_SECTION_IDS.map((section) => [section, ids(`summary-${section}`).checked])),
+    speakerDiarization: ids("speaker-diarization").checked,
     saveTranscript: ids("save-transcript").checked,
     monitorLevel: ids("monitor-level").value,
     outgoingDeviceId: ids("outgoing-device").value,

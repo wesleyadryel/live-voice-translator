@@ -11,6 +11,16 @@ export const DEFAULT_SETTINGS = {
   incomingDeviceId: "default",
   monitorLevel: "off",
   summaryDetail: "standard",
+  summarySections: {
+    overview: true,
+    topics: true,
+    decisions: true,
+    tasks: true,
+    deadlines: true,
+    owners: true,
+    questions: true
+  },
+  speakerDiarization: true,
   saveTranscript: true,
   retentionDays: 30,
   maxSessionMinutes: 90,

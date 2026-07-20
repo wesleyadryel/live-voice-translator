@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="modes.css">
   <link rel="stylesheet" href="release.css">
+  <link rel="stylesheet" href="options-enhancements.css">
 </head>
 <body class="options-shell">
   <main class="settings">
@@ -39,6 +40,17 @@
       <section>
         <h2>Конспект встречи</h2>
         <label>Подробность<select id="summary-detail"><option value="brief">Краткий</option><option value="standard">Стандартный</option><option value="detailed">Подробный</option></select></label>
+        <div class="summary-options" role="group" aria-label="Summary sections">
+          <p data-i18n="summarySectionsHelp">Choose exactly what the meeting summary should include.</p>
+          <label class="check-row"><input id="summary-overview" type="checkbox"><span data-i18n="summaryOverview">Overview</span></label>
+          <label class="check-row"><input id="summary-topics" type="checkbox"><span data-i18n="summaryTopics">Key topics</span></label>
+          <label class="check-row"><input id="summary-decisions" type="checkbox"><span data-i18n="summaryDecisions">Decisions</span></label>
+          <label class="check-row"><input id="summary-tasks" type="checkbox"><span data-i18n="summaryTasks">Tasks</span></label>
+          <label class="check-row"><input id="summary-deadlines" type="checkbox"><span data-i18n="summaryDeadlines">Deadlines</span></label>
+          <label class="check-row"><input id="summary-owners" type="checkbox"><span data-i18n="summaryOwners">Owners</span></label>
+          <label class="check-row"><input id="summary-questions" type="checkbox"><span data-i18n="summaryQuestions">Open questions</span></label>
+        </div>
+        <label class="check-row"><input id="speaker-diarization" type="checkbox"><span data-i18n="speakerDiarization">Identify different participants in the final transcript</span></label>
         <label class="check-row"><input id="save-transcript" type="checkbox">Сохранять полный текст встречи локально</label>
         <label>Хранить историю<select id="retention-days"><option value="7">7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option><option value="365">1 год</option></select></label>
         <label>Лимит одной сессии<select id="max-session-minutes"><option value="30">30 минут</option><option value="60">1 час</option><option value="90">1 час 30 минут</option><option value="120">2 часа</option><option value="180">3 часа</option></select></label>

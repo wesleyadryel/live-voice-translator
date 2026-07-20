@@ -16,12 +16,24 @@ let sessionTimer = null;
 let reconnectTimer = null;
 let reconnecting = false;
 let generation = 0;
+let speakerRecorder = null;
+let speakerAudioChunks = [];
 
 const MODES = {
   translation: { audio: true, notes: false, summary: false },
   notes: { audio: false, notes: true, summary: true },
   both: { audio: true, notes: true, summary: true },
   transcript: { audio: false, notes: true, summary: false }
+};
+
+const SUMMARY_SECTION_TITLES = {
+  overview: "Краткое содержание",
+  topics: "Основные темы",
+  decisions: "Принятые решения",
+  tasks: "Задачи",
+  deadlines: "Сроки",
+  owners: "Ответственные",
+  questions: "Открытые вопросы"
 };
 
 function freshState(overrides = {}) {
@@ -39,6 +51,33 @@ async function storageSet(value) {
   if (!result?.ok) throw new Error(result?.error || "Не удалось сохранить локальные данные");
 }
 
+function startSpeakerRecording(stream) {
+  if (typeof MediaRecorder === "undefined" || !stream) return;
+  try {
+    const chunks = [];
+    speakerAudioChunks = chunks;
+    speakerRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 24000 });
+    speakerRecorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    speakerRecorder.start(1000);
+  } catch {
+    speakerRecorder = null;
+    speakerAudioChunks = [];
+  }
+}
+
+async function stopSpeakerRecording() {
+  const recorder = speakerRecorder;
+  const chunks = speakerAudioChunks;
+  speakerRecorder = null;
+  speakerAudioChunks = [];
+  if (!recorder || !chunks) return null;
+  if (recorder.state === "inactive") return new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+  return new Promise((resolve) => {
+    recorder.addEventListener("stop", () => resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" })), { once: true });
+    recorder.stop();
+  });
+}
+
 function addTranscript(speaker, text, language) {
   if (!meeting || !text) return;
   meeting.transcript.push({ speaker, text, language, offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000)) });
@@ -53,13 +92,17 @@ function responseText(payload) {
 async function createSummary(settings, currentMeeting) {
   const lines = currentMeeting.transcript.map((item) => `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`).join("\n");
   if (!lines) return "Недостаточно распознанной речи для конспекта.";
+  const configuredSections = { ...DEFAULT_SETTINGS.summarySections, ...(settings.summarySections || {}) };
+  const sections = Object.entries(SUMMARY_SECTION_TITLES).filter(([key]) => configuredSections[key]).map(([, title]) => title);
+  if (!sections.length) return "";
   const detail = settings.summaryDetail === "brief" ? "краткий" : settings.summaryDetail === "detailed" ? "подробный" : "сбалансированный";
+  const summaryLanguage = settings.sourceLanguage || "Russian";
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-5.6-sol",
-      instructions: `Создай ${detail} конспект встречи на русском языке в Markdown. Используй разделы: Краткое содержание, Основные темы, Принятые решения, Задачи и ответственные, Сроки, Открытые вопросы. Не придумывай факты; если раздел пуст, напиши «Не зафиксировано».`,
+      instructions: `Создай ${detail} конспект встречи на ${summaryLanguage} языке в Markdown. Используй только эти разделы: ${sections.join(", ")}. Не добавляй других разделов и не объединяй выбранные разделы. Не придумывай факты; если для выбранного раздела нет данных, напиши «Не зафиксировано».`,
       input: lines
     })
   });
@@ -67,8 +110,47 @@ async function createSummary(settings, currentMeeting) {
   return responseText(await response.json()) || "Конспект не был сформирован.";
 }
 
-async function saveMeeting(settings, currentMeeting) {
+function speakerLabel(rawSpeaker, locale) {
+  return locale === "ru" ? `Спикер ${rawSpeaker}` : `Speaker ${rawSpeaker}`;
+}
+
+async function diarizeRemoteSpeakers(settings, currentMeeting, audioBlob) {
+  if (!settings.speakerDiarization || !audioBlob?.size || !currentMeeting.transcript?.length) return;
+  if (audioBlob.size > 24_000_000) {
+    currentMeeting.diarizationError = "Recording was too large to identify participants.";
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "meeting.webm");
+    formData.append("model", "gpt-4o-transcribe-diarize");
+    formData.append("response_format", "diarized_json");
+    formData.append("chunking_strategy", "auto");
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${settings.apiKey}` },
+      body: formData
+    });
+    if (!response.ok) throw new Error(`OpenAI ${response.status}`);
+    const payload = await response.json();
+    const segments = Array.isArray(payload.segments) ? payload.segments.filter((segment) => segment.text?.trim()) : [];
+    if (!segments.length) return;
+    const remoteTranscript = segments.map((segment) => ({
+      speaker: speakerLabel(segment.speaker || "A", settings.interfaceLanguage || "en"),
+      text: segment.text.trim(),
+      language: settings.targetLanguage,
+      offsetSeconds: Math.max(0, Math.round(Number(segment.start) || 0))
+    }));
+    currentMeeting.transcript = currentMeeting.transcript.filter((item) => item.speaker !== "Собеседник").concat(remoteTranscript).sort((left, right) => left.offsetSeconds - right.offsetSeconds);
+    currentMeeting.speakersDetected = [...new Set(remoteTranscript.map((item) => item.speaker))];
+  } catch (error) {
+    currentMeeting.diarizationError = error.message;
+  }
+}
+
+async function saveMeeting(settings, currentMeeting, speakerAudio) {
   const finishedAt = Date.now();
+  await diarizeRemoteSpeakers(settings, currentMeeting, speakerAudio);
   const record = { ...currentMeeting, finishedAt, durationSeconds: Math.round((finishedAt - currentMeeting.startedAt) / 1000), summary: "" };
   if (!settings.saveTranscript) record.transcript = [];
   if (MODES[currentMeeting.mode].summary) {
@@ -96,6 +178,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const settings = activeSettings;
   const capturedMeeting = meeting;
   const capturedStartedAt = sessionStartedAt;
+  const speakerAudio = await stopSpeakerRecording();
   const durationSeconds = capturedStartedAt ? Math.max(0, Math.round((Date.now() - capturedStartedAt) / 1000)) : 0;
   const hadActiveSession = state.active;
   generation += 1;
@@ -111,7 +194,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   meeting = null;
   sessionStartedAt = 0;
   state = freshState({ phase: capturedMeeting ? "summarizing" : "idle", durationSeconds, transcriptCount: state.transcriptCount });
-  const completedMeeting = persist && capturedMeeting && MODES[capturedMeeting.mode]?.notes ? await saveMeeting(settings, capturedMeeting) : null;
+  const completedMeeting = persist && capturedMeeting && MODES[capturedMeeting.mode]?.notes ? await saveMeeting(settings, capturedMeeting, speakerAudio) : null;
   if (hadActiveSession && durationSeconds > 0) {
     const usage = await storageGet({ usageSeconds: 0, sessionCount: 0 });
     await storageSet({ usageSeconds: Number(usage.usageSeconds || 0) + durationSeconds, sessionCount: Number(usage.sessionCount || 0) + 1 });
@@ -186,6 +269,7 @@ async function start(streamId, suppliedSettings = {}) {
   try {
     microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } }, video: false });
+    if (mode.notes && settings.speakerDiarization) startSpeakerRecording(tabStream);
     tabStream.getTracks().forEach((track) => { track.onended = () => { if (state.active) stop({ reason: "tab_closed", notify: true }); }; });
     await applySink(outgoingOutput, settings.outgoingDeviceId);
     await applySink(incomingOutput, settings.incomingDeviceId);
