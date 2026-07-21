@@ -287,7 +287,7 @@ async function connectPair(settings, mode) {
   // A media tab (currently YouTube) needs only the tab-to-listener direction.
   // Avoiding a microphone stream keeps video translation usable without mic permission
   // and prevents an unused second realtime session.
-  if (settings.captureKind !== "media") outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
+  if (settings.captureKind !== "media" && !settings.webRtcOutgoing) outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
   incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
   await Promise.all([outgoingTranslator?.connect(), incomingTranslator.connect()]);
 }
@@ -327,7 +327,7 @@ async function start(suppliedSettings = {}) {
   meeting = mode.notes ? { id: crypto.randomUUID(), title: tr(settings, "meetingTitle", { date: new Date().toLocaleString(settings.interfaceLanguage || "en") }), startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
   state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
-    if (settings.captureKind !== "media") {
+    if (settings.captureKind !== "media" && !settings.webRtcOutgoing) {
       microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     }
     tabStream = await takePreparedCapture(settings.captureTabId);
@@ -357,7 +357,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true, state, preparedTabId: preparedCapture?.tabId || null });
     return false;
   }
-  const action = message.type === "PREPARE_TAB_CAPTURE" ? prepareTabCapture(message.streamId, message.tabId) : message.type === "START_TRANSLATION" ? start(message.settings) : message.type === "STOP_TRANSLATION" ? stop() : Promise.resolve({ ok: false, error: t(activeSettings.interfaceLanguage, "unknownCommand") });
+  if (message.type === "ADD_OUTGOING_TRANSCRIPT") {
+    if (state.active && message.text) {
+      state.translatedUtteranceCount += 1;
+      addTranscript(tr(activeSettings, "speakerYou"), message.text, message.language || activeSettings.targetLanguage, "you");
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+  const action = message.type === "PREPARE_TAB_CAPTURE" ? prepareTabCapture(message.streamId, message.tabId) : message.type === "START_TRANSLATION" ? start(message.settings) : message.type === "STOP_TRANSLATION" ? stop() : message.type === "OUTGOING_DISCONNECTED" ? stop({ reason: "connection", error: tr(activeSettings, "connectionRestoreFailed", { error: message.reason || "disconnected" }), notify: true }) : Promise.resolve({ ok: false, error: t(activeSettings.interfaceLanguage, "unknownCommand") });
   action.then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });

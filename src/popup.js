@@ -27,6 +27,8 @@ let lastStartedAt = 0;
 let actionError = "";
 let activeCaptureKind = "meeting";
 let preparedTabId = null;
+let activeTabUrl = "";
+let outgoingRouteStatus = null;
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -40,7 +42,6 @@ function friendlyError(error) {
   if (/Requested device not found|NotFoundError/i.test(message)) return t(locale, "deviceMissing");
   if (/Extension has not been invoked|activeTab permission|TAB_CAPTURE_NOT_PREPARED/i.test(message)) return TAB_ACCESS_HINT[locale] || TAB_ACCESS_HINT.en;
   if (/Cannot capture|tabCapture|active tab/i.test(message)) return t(locale, "conferenceTab");
-  if (/virtual|аудиокабель|different devices|Conference mode/i.test(message)) return message.includes("different") || message.includes("разными") ? t(locale, "differentOutputs") : t(locale, "conferenceCable");
   if (/network|fetch|connection/i.test(message)) return t(locale, "network");
   return message;
 }
@@ -67,6 +68,15 @@ function captureKindFor(url = "") {
     return host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be" ? "media" : "meeting";
   } catch {
     return "meeting";
+  }
+}
+
+function isSupportedConferenceUrl(url = "") {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com";
+  } catch {
+    return false;
   }
 }
 
@@ -134,8 +144,10 @@ async function renderPreflight(settings) {
     return;
   }
   const voiceMode = ["translation", "both"].includes(settings.mode);
-  const conferenceReady = mediaCapture || settings.audioProfile !== "conference" || (settings.outgoingDeviceId && settings.outgoingDeviceId !== "default" && settings.outgoingDeviceId !== settings.incomingDeviceId);
-  setCheck("route", !voiceMode || conferenceReady ? "ok" : "error", !voiceMode || mediaCapture ? t(locale, "notRequired") : settings.audioProfile === "solo" ? "Mac" : conferenceReady ? t(locale, "ready") : t(locale, "required"));
+  const conferenceReady = isSupportedConferenceUrl(activeTabUrl);
+  const routeActive = outgoingRouteStatus?.status === "routed";
+  const routeWaiting = ["activating", "waiting-for-sender", "ready"].includes(outgoingRouteStatus?.status);
+  setCheck("route", !voiceMode || routeActive || (conferenceReady && !active) ? "ok" : routeWaiting ? "warn" : "error", !voiceMode ? t(locale, "notRequired") : routeActive ? t(locale, "ready") : conferenceReady && !active ? "WebRTC" : routeWaiting ? t(locale, "connecting") : t(locale, "required"));
 }
 
 function render(state = currentState) {
@@ -176,6 +188,7 @@ async function refresh() {
   locale = settings.interfaceLanguage || "en";
   localizePage(locale);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  activeTabUrl = tab?.url || "";
   activeCaptureKind = captureKindFor(tab?.url);
   renderCaptureContext(activeCaptureKind);
   document.title = t(locale, "appTitle");
@@ -185,6 +198,7 @@ async function refresh() {
   elements.interfaceLanguage.value = locale;
   elements.sourceLanguage.value = languages.source;
   elements.targetLanguage.value = languages.target;
+  elements.outgoingDevice.closest(".quick-setting").hidden = activeCaptureKind === "media" || isSupportedConferenceUrl(activeTabUrl);
   elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured");
   elements.usage.textContent = t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 });
   elements.source.textContent = languageLabel(languages.source);
@@ -193,6 +207,7 @@ async function refresh() {
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   preparedTabId = result?.preparedTabId || null;
+  outgoingRouteStatus = result?.outgoingRouteStatus || null;
   await renderPreflight(settings);
   const nextState = result?.state || { active: false, phase: "idle", error: result?.error || "" };
   if (!preparedTabId && activeCaptureKind === "media" && result?.captureError) nextState.error = result.captureError;

@@ -2,6 +2,25 @@ import { t } from "./i18n.js";
 
 let offscreenCreating;
 let lastCaptureError = "";
+let activeConferenceTabId = null;
+
+const REALTIME_MODEL = "gpt-realtime-1.5";
+const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
+
+function isSupportedConferenceUrl(url = "") {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com";
+  } catch {
+    return false;
+  }
+}
+
+async function stopConferenceOutgoing(tabId = activeConferenceTabId) {
+  if (!tabId) return;
+  await chrome.tabs.sendMessage(tabId, { type: "CONFERENCE_STOP_OUTGOING" }).catch(() => {});
+  if (activeConferenceTabId === tabId) activeConferenceTabId = null;
+}
 
 // This preference persists in the Chrome profile across extension reloads.
 // It must be reset explicitly or Chrome opens the side panel itself and skips
@@ -87,7 +106,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target === "offscreen") return false;
 
   if (message.type === "SESSION_ENDED") {
+    stopConferenceOutgoing().catch(() => {});
     setActionState(false, Boolean(message.result?.state?.error)).catch(() => {});
+    return false;
+  }
+
+  if (message.type === "CONFERENCE_REALTIME_SDP") {
+    (async () => {
+      if (!sender.tab?.id || !isSupportedConferenceUrl(sender.tab.url)) throw new Error("UNSUPPORTED_CONFERENCE_TAB");
+      if (sender.tab.id !== activeConferenceTabId) throw new Error("CONFERENCE_SESSION_NOT_ACTIVE");
+      if (typeof message.sdp !== "string" || !message.sdp.startsWith("v=0")) throw new Error("INVALID_REALTIME_SDP");
+      const { apiKey = "" } = await chrome.storage.local.get({ apiKey: "" });
+      if (!apiKey) throw new Error("API_KEY_MISSING");
+      const response = await fetch(REALTIME_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/sdp" },
+        body: message.sdp
+      });
+      if (!response.ok) throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 180)}`);
+      sendResponse({ ok: true, answerSdp: await response.text() });
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "CONFERENCE_OUTGOING_TRANSCRIPT") {
+    if (sender.tab?.id !== activeConferenceTabId) return false;
+    chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_OUTGOING_TRANSCRIPT", text: message.text, language: message.language }).catch(() => {});
+    return false;
+  }
+
+  if (message.type === "CONFERENCE_OUTGOING_DISCONNECTED") {
+    if (sender.tab?.id !== activeConferenceTabId) return false;
+    chrome.runtime.sendMessage({ target: "offscreen", type: "OUTGOING_DISCONNECTED", reason: message.reason || "disconnected" }).catch(() => {});
     return false;
   }
 
@@ -113,20 +163,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         settings.targetLanguage = message.targetLanguage || settings.mediaTargetLanguage || "Russian";
       }
       const locale = settings.interfaceLanguage || "en";
-      if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
-        throw new Error(t(locale, "conferenceCable"));
-      }
-      if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && settings.outgoingDeviceId === settings.incomingDeviceId) {
-        throw new Error(t(locale, "differentOutputs"));
+      const browserOutgoing = settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode);
+      if (browserOutgoing) {
+        const tab = await chrome.tabs.get(message.tabId);
+        if (!isSupportedConferenceUrl(tab.url)) throw new Error(t(locale, "conferenceTab"));
+        activeConferenceTabId = tab.id;
+        const outgoing = await chrome.tabs.sendMessage(tab.id, {
+          type: "CONFERENCE_START_OUTGOING",
+          settings: {
+            sourceLanguage: settings.sourceLanguage,
+            targetLanguage: settings.targetLanguage,
+            outgoingVoice: settings.outgoingVoice
+          }
+        });
+        if (!outgoing?.ok) throw new Error(outgoing?.error || "CONFERENCE_WEBRTC_ROUTE_FAILED");
+        settings.webRtcOutgoing = true;
       }
       const result = await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "START_TRANSLATION",
         settings
       });
+      if (!result?.ok && settings.webRtcOutgoing) await stopConferenceOutgoing(message.tabId);
       await setActionState(Boolean(result?.ok && result?.state?.active), !result?.ok);
       sendResponse(result);
     })().catch(async (error) => {
+      await stopConferenceOutgoing(message.tabId);
       await setActionState(false, true);
       sendResponse({ ok: false, error: error.message });
     });
@@ -136,11 +198,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "STOP_TRANSLATION" || message.type === "GET_STATUS") {
     (async () => {
       await ensureOffscreenDocument();
+      if (message.type === "STOP_TRANSLATION") await stopConferenceOutgoing();
       const result = await chrome.runtime.sendMessage({
         target: "offscreen",
         type: message.type
       });
       if (message.type === "GET_STATUS") result.captureError = lastCaptureError;
+      if (message.type === "GET_STATUS" && activeConferenceTabId) {
+        const outgoing = await chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_GET_OUTGOING_STATUS" }).catch(() => null);
+        result.outgoingRouteStatus = outgoing?.routeStatus || null;
+      }
       if (message.type === "STOP_TRANSLATION") await setActionState(false);
       if (message.type === "GET_STATUS") await setActionState(Boolean(result?.state?.active), Boolean(result?.state?.error));
       sendResponse(result);

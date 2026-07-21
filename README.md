@@ -16,12 +16,13 @@ For voice modes choose an audio scenario:
 
 - **Solo test** plays the outgoing translation through the normal speakers so
   the local user can verify it without another participant.
-- **Conference** requires a virtual audio cable and sends the outgoing
-  translation there. The local user can monitor it at zero, low, or full volume.
+- **Browser conference** replaces the outgoing WebRTC microphone track with
+  translated speech in Google Meet, Zoom Web, and Yandex Telemost. Native
+  desktop conference applications are intentionally out of scope.
 
 ## Status
 
-Version 0.7 is a release-candidate build for macOS/Chrome. It captures the conference tab and microphone, creates two OpenAI Realtime sessions, routes translated audio to selected outputs, tracks session duration locally, retries a dropped Realtime connection, limits long-running sessions, and retains notes for a user-selected period. Meeting notes can be customized by section; final transcripts can identify remote speakers when the selected transcription model returns diarized segments.
+Version 0.9 is a browser-only release candidate for Chrome. It captures the conference tab, replaces the meeting's outgoing WebRTC microphone track with translated speech, restores the original microphone on stop, tracks session duration locally, retries a dropped incoming Realtime connection, limits long-running sessions, and retains notes for a user-selected period. Meeting notes can be customized by section; final transcripts can identify remote speakers when the selected transcription model returns diarized segments.
 
 ## Requirements
 

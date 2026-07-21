@@ -2,7 +2,7 @@ const REALTIME_MODEL = "gpt-realtime-1.5";
 const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
 
 export class RealtimeTranslator {
-  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, verbatim = false, manualChunkMs = 0 }) {
+  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, onOutputTrack, exchangeSdp, verbatim = false, manualChunkMs = 0 }) {
     this.apiKey = apiKey;
     this.inputStream = inputStream;
     this.outputElement = outputElement;
@@ -13,6 +13,8 @@ export class RealtimeTranslator {
     this.onState = onState || (() => {});
     this.onTranscript = onTranscript || (() => {});
     this.onDisconnect = onDisconnect || (() => {});
+    this.onOutputTrack = onOutputTrack || (() => {});
+    this.exchangeSdp = exchangeSdp || null;
     this.verbatim = verbatim;
     this.manualChunkMs = manualChunkMs;
     this.transcriptBuffer = "";
@@ -37,6 +39,7 @@ export class RealtimeTranslator {
     pc.ontrack = (event) => {
       this.outputElement.srcObject = event.streams[0];
       this.outputElement.play().catch(() => {});
+      this.onOutputTrack(event.track, event.streams[0]);
       if (this.monitorElement) {
         this.monitorElement.srcObject = event.streams[0];
         this.monitorElement.play().catch(() => {});
@@ -108,19 +111,25 @@ export class RealtimeTranslator {
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    const response = await fetch(REALTIME_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/sdp"
-      },
-      body: offer.sdp
-    });
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`OpenAI ${response.status}: ${detail.slice(0, 180)}`);
+    let answerSdp;
+    if (this.exchangeSdp) {
+      answerSdp = await this.exchangeSdp(offer.sdp);
+    } else {
+      const response = await fetch(REALTIME_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/sdp"
+        },
+        body: offer.sdp
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`OpenAI ${response.status}: ${detail.slice(0, 180)}`);
+      }
+      answerSdp = await response.text();
     }
-    await pc.setRemoteDescription({ type: "answer", sdp: await response.text() });
+    await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
   }
 
   close() {
