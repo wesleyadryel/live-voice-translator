@@ -214,16 +214,18 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
 }
 
 function translatorOptions(settings, mode, outgoing) {
+  const mediaCapture = settings.captureKind === "media";
+  const forwards = outgoing || mediaCapture;
   return {
     apiKey: settings.apiKey,
     inputStream: outgoing ? microphoneStream : tabStream,
     outputElement: outgoing ? outgoingOutput : incomingOutput,
     monitorElement: outgoing ? outgoingMonitor : null,
-    from: outgoing ? settings.sourceLanguage : settings.targetLanguage,
-    to: outgoing ? settings.targetLanguage : settings.sourceLanguage,
+    from: forwards ? settings.sourceLanguage : settings.targetLanguage,
+    to: forwards ? settings.targetLanguage : settings.sourceLanguage,
     voice: outgoing ? settings.outgoingVoice : settings.incomingVoice,
     verbatim: !mode.audio,
-    onTranscript: (text) => addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (outgoing ? settings.targetLanguage : settings.sourceLanguage) : (outgoing ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant"),
+    onTranscript: (text) => addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant"),
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
     onDisconnect: () => scheduleReconnect(settings, mode)
   };

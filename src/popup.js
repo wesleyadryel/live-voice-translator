@@ -10,6 +10,13 @@ const elements = {
   modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device")
 };
 
+const routeLabels = {
+  source: document.querySelector(".language-route > div:first-child > span"),
+  target: document.querySelector(".language-route > .align-right > span"),
+  sourceSetting: document.querySelector('label[for="source-language"]'),
+  targetSetting: document.querySelector('label[for="target-language"]')
+};
+
 let active = false;
 let busy = false;
 let currentMode = "both";
@@ -18,6 +25,7 @@ let locale = "en";
 let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
 let actionError = "";
+let activeCaptureKind = "meeting";
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -54,6 +62,25 @@ function captureKindFor(url = "") {
   }
 }
 
+const MEDIA_LABELS = {
+  en: { source: "Video", target: "You", sourceSetting: "Video language", targetSetting: "Translate to" },
+  ru: { source: "Видео", target: "Вы", sourceSetting: "Язык видео", targetSetting: "Переводить на" },
+  es: { source: "Vídeo", target: "Usted", sourceSetting: "Idioma del vídeo", targetSetting: "Traducir a" },
+  de: { source: "Video", target: "Sie", sourceSetting: "Videosprache", targetSetting: "Übersetzen in" },
+  fr: { source: "Vidéo", target: "Vous", sourceSetting: "Langue de la vidéo", targetSetting: "Traduire vers" }
+};
+
+function renderCaptureContext(kind) {
+  if (kind === "media") {
+    Object.entries(MEDIA_LABELS[locale] || MEDIA_LABELS.en).forEach(([key, value]) => { routeLabels[key].textContent = value; });
+    return;
+  }
+  routeLabels.source.textContent = t(locale, "you");
+  routeLabels.target.textContent = t(locale, "participant");
+  routeLabels.sourceSetting.textContent = t(locale, "youSpeak");
+  routeLabels.targetSetting.textContent = t(locale, "participantLanguage");
+}
+
 async function microphonePermission() {
   try { return (await navigator.permissions.query({ name: "microphone" })).state; }
   catch { return "prompt"; }
@@ -82,7 +109,7 @@ function render(state = currentState) {
   document.body.classList.toggle("is-busy", busy);
   elements.toggle.classList.toggle("is-loading", busy || ["connecting", "reconnecting", "summarizing"].includes(state.phase));
   elements.toggle.disabled = busy;
-  elements.toggleLabel.textContent = active ? t(locale, "stop") : t(locale, START_LABELS[currentMode]);
+  elements.toggleLabel.textContent = active ? t(locale, "stop") : activeCaptureKind === "media" ? t(locale, "startTranslation") : t(locale, START_LABELS[currentMode]);
   const iconPath = elements.toggle.querySelector(".button-symbol path");
   if (iconPath) iconPath.setAttribute("d", active ? "M8 8h8v8H8z" : "m9 7 8 5-8 5V7Z");
   elements.status.textContent = t(locale, PHASES[state.phase] || (active ? "live" : "ready"));
@@ -106,6 +133,9 @@ async function refresh() {
   currentSettings = settings;
   locale = settings.interfaceLanguage || "en";
   localizePage(locale);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  activeCaptureKind = captureKindFor(tab?.url);
+  renderCaptureContext(activeCaptureKind);
   document.title = t(locale, "appTitle");
   currentMode = settings.mode;
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
