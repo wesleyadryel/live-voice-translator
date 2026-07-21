@@ -230,9 +230,12 @@ function translatorOptions(settings, mode, outgoing) {
 }
 
 async function connectPair(settings, mode) {
-  outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
+  // A media tab (currently YouTube) needs only the tab-to-listener direction.
+  // Avoiding a microphone stream keeps video translation usable without mic permission
+  // and prevents an unused second realtime session.
+  if (settings.captureKind !== "media") outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
   incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
-  await Promise.all([outgoingTranslator.connect(), incomingTranslator.connect()]);
+  await Promise.all([outgoingTranslator?.connect(), incomingTranslator.connect()]);
 }
 
 function scheduleReconnect(settings, mode) {
@@ -270,7 +273,9 @@ async function start(streamId, suppliedSettings = {}) {
   meeting = mode.notes ? { id: crypto.randomUUID(), title: tr(settings, "meetingTitle", { date: new Date().toLocaleString(settings.interfaceLanguage || "en") }), startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
   state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
-    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    if (settings.captureKind !== "media") {
+      microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    }
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } }, video: false });
     if (mode.notes && settings.speakerDiarization) startSpeakerRecording(tabStream);
     tabStream.getTracks().forEach((track) => { track.onended = () => { if (state.active) stop({ reason: "tab_closed", notify: true }); }; });

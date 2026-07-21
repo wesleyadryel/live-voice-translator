@@ -45,6 +45,15 @@ function formatDuration(totalSeconds) {
 
 function languageLabel(value) { return languageName(locale, value); }
 
+function captureKindFor(url = "") {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be" ? "media" : "meeting";
+  } catch {
+    return "meeting";
+  }
+}
+
 async function microphonePermission() {
   try { return (await navigator.permissions.query({ name: "microphone" })).state; }
   catch { return "prompt"; }
@@ -150,7 +159,11 @@ elements.toggle.addEventListener("click", async () => {
       }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab || !/^https?:/i.test(tab.url || "")) throw new Error(t(locale, "conferenceTab"));
-      const result = await chrome.runtime.sendMessage({ type: "START_TRANSLATION", tabId: tab.id });
+      const result = await chrome.runtime.sendMessage({
+        type: "START_TRANSLATION",
+        tabId: tab.id,
+        captureKind: captureKindFor(tab.url)
+      });
       if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
       currentState = result.state;
     }
@@ -172,6 +185,9 @@ $("#accept-notice").addEventListener("click", async () => {
   await saveSettings({ recordingNoticeAccepted: true });
   currentSettings.recordingNoticeAccepted = true;
   elements.notice.hidden = true;
+  // The user already requested a start; acknowledging the recording notice should
+  // continue that action instead of requiring an unexplained second click.
+  elements.toggle.click();
 });
 document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", async () => {
   if (active || busy) return;

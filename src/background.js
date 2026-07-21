@@ -69,12 +69,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "START_TRANSLATION") {
     (async () => {
       await ensureOffscreenDocument();
-      const settings = await chrome.storage.local.get();
+      const settings = { ...(await chrome.storage.local.get()), captureKind: message.captureKind || "meeting" };
       const locale = settings.interfaceLanguage || "en";
-      if (["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
+      if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
         throw new Error(t(locale, "conferenceCable"));
       }
-      if (["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && settings.outgoingDeviceId === settings.incomingDeviceId) {
+      if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && settings.outgoingDeviceId === settings.incomingDeviceId) {
         throw new Error(t(locale, "differentOutputs"));
       }
       const streamId = await chrome.tabCapture.getMediaStreamId({
