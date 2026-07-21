@@ -12,26 +12,21 @@ Clicking the extension icon opens a persistent Chrome side panel. Translation
 and note capture continue when the panel is closed or the user switches tabs.
 The extension badge shows `ON` while a session is active and `!` after an error.
 
-For voice modes choose an audio scenario:
-
-- **Solo test** plays the outgoing translation through the normal speakers so
-  the local user can verify it without another participant.
-- **Browser conference** replaces the outgoing WebRTC microphone track with
-  translated speech in Google Meet, Zoom Web, and Yandex Telemost. Native
-  desktop conference applications are intentionally out of scope.
+In supported browser conferences, the extension replaces the outgoing WebRTC
+microphone track with translated speech. The original microphone is restored
+when the session stops. Google Meet, Zoom Web, and Yandex Telemost are the
+current browser targets; native desktop conference applications are out of
+scope.
 
 ## Status
 
-Version 0.9 is a browser-only release candidate for Chrome. It captures the conference tab, replaces the meeting's outgoing WebRTC microphone track with translated speech, restores the original microphone on stop, tracks session duration locally, retries a dropped incoming Realtime connection, limits long-running sessions, and retains notes for a user-selected period. Meeting notes can be customized by section; final transcripts can identify remote speakers when the selected transcription model returns diarized segments.
+Version 0.9.1 is a browser-only release candidate for Chrome. It captures the conference tab, replaces the meeting's outgoing WebRTC microphone track with translated speech, restores the original microphone on stop, tracks session duration locally, retries a dropped incoming Realtime connection, and limits long-running sessions. Meeting notes can be customized by section; final transcripts can identify remote speakers when the selected transcription model returns diarized segments.
 
 ## Requirements
 
 - Chrome 116 or newer
 - An OpenAI API account with Realtime API access
 - Headphones
-- A virtual audio device for translated microphone output
-  - macOS: [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)
-  - Windows: VB-CABLE or an equivalent virtual cable
 
 ## macOS installer
 
@@ -51,13 +46,13 @@ Chrome does not allow a local DMG or CRX to silently install an extension on mac
 2. Enable **Developer mode**.
 3. Click **Load unpacked** and select this repository directory.
 4. Open the extension settings and enter your own OpenAI API key.
-5. Select the virtual cable as **Translation for the other participant**.
-6. In Meet/Telemost/Zoom select that same virtual cable as the microphone.
-7. Open the conference tab, click the extension, then **Start translation**.
+5. Open a supported browser conference, click the extension icon, then click
+   **Start translation**.
 
 When a notes mode is selected, stopping the session opens the meeting history.
 The extension can create a Russian Markdown summary with decisions, tasks,
-deadlines, and open questions. History is kept locally for the chosen retention period and can be copied, downloaded, or deleted.
+deadlines, and open questions. History is kept locally and can be searched,
+copied, downloaded, or deleted.
 
 Use headphones. Without them the conference audio can feed back into the
 microphone and be translated repeatedly.
@@ -72,8 +67,8 @@ project spending limit.
 
 ## Known limitations
 
-- Chrome extensions cannot expose a new microphone device. A virtual audio
-  cable is required for outgoing translated speech.
+- Outgoing WebRTC microphone replacement works only in the supported browser
+  versions of Meet, Zoom, and Telemost; it does not control native desktop apps.
 - This build sends a user-provided long-lived API key directly to the Realtime endpoint. Do not use an unrestricted production key. See [SECURITY.md](SECURITY.md).
 - Browser permission prompts and audio device labels vary by operating system.
 - Meet is the first target. Telemost and browser Zoom need live compatibility

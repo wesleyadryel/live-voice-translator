@@ -11,7 +11,7 @@
 <body class="panel-shell compact-panel">
   <main class="control-panel">
     <header class="mac-toolbar">
-      <div class="app-identity"><small>LIVE VOICE</small><strong data-i18n="session">Meeting interpreter</strong></div>
+      <div class="app-identity"><span class="app-icon" aria-hidden="true"><i></i><i></i><i></i></span><div><small>LIVE VOICE</small><strong data-i18n="session">Meeting interpreter</strong></div></div>
       <div class="toolbar-actions">
         <select id="interface-language" class="interface-language" aria-label="Interface language" data-i18n-aria="interfaceLanguage"><option value="en">EN</option><option value="ru">RU</option><option value="es">ES</option><option value="de">DE</option><option value="fr">FR</option></select>
         <button class="toolbar-text-button" id="open-history" data-i18n="history">History</button>
@@ -22,7 +22,7 @@
     <section class="setup-banner" id="setup-banner" hidden><div><strong data-i18n="configureOpenAI">Connect OpenAI</strong><p id="setup-copy" data-i18n="setupCopy">Add an API key to start translating.</p></div><button id="setup-action" data-i18n="configure">Set up</button></section>
 
     <section class="session-surface" aria-live="polite">
-      <div class="session-meta"><span class="phase-pill"><i></i><span id="status-label" data-i18n="ready">Ready</span></span><time id="session-timer" datetime="PT0S">00:00</time></div>
+      <div class="session-meta"><span class="phase-pill"><i></i><span id="status-label" data-i18n="ready">Ready</span></span><span class="capture-context" id="capture-context">Browser meeting</span><time id="session-timer" datetime="PT0S">00:00</time></div>
       <div class="language-route"><div><span data-i18n="you">You</span><strong id="source-label">Russian</strong></div><svg viewBox="0 0 40 20" aria-hidden="true"><path d="M3 10h30m-6-6 6 6-6 6"/></svg><div class="align-right"><span data-i18n="participant">Participant</span><strong id="target-label">English</strong></div></div>
       <div class="audio-visual" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
     </section>
@@ -35,8 +35,9 @@
 
     <section class="quick-settings" aria-label="Meeting settings" data-i18n-aria="settingsTitle">
       <div class="quick-setting"><label for="source-language" data-i18n="youSpeak">You speak</label><select id="source-language"><option value="Russian" data-i18n="languageRussian">Russian</option><option value="English" data-i18n="languageEnglish">English</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option></select></div>
+      <button class="swap-languages" id="swap-languages" type="button" aria-label="Swap languages" data-i18n-aria="swapLanguages" title="Swap languages" data-i18n-title="swapLanguages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-3 3 3 3M4 10h13M17 17l3-3-3-3M20 14H7"/></svg></button>
       <div class="quick-setting"><label for="target-language" data-i18n="participantLanguage">Participant</label><select id="target-language"><option value="English" data-i18n="languageEnglish">English</option><option value="Russian" data-i18n="languageRussian">Russian</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option></select></div>
-      <div class="quick-setting"><label for="outgoing-device" data-i18n="outputParticipant">To meeting</label><select id="outgoing-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
+      <div class="quick-setting" hidden><label for="outgoing-device" data-i18n="outputParticipant">To meeting</label><select id="outgoing-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
       <div class="quick-setting"><label for="incoming-device" data-i18n="outputYou">For you</label><select id="incoming-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
     </section>
 

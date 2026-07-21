@@ -11,11 +11,12 @@
 <body class="history-shell">
   <main class="history-layout">
     <aside>
-      <div class="brand-row"><div class="brand-mark"><span></span><span></span><span></span></div><div><strong>Live Voice</strong><small data-i18n="historyTitle">Meeting history</small></div></div>
+      <div class="brand-row"><div class="brand-mark"><span></span><span></span><span></span></div><div><small>LIVE VOICE</small><strong data-i18n="historyTitle">Meeting history</strong></div></div>
+      <div class="history-toolbar"><label class="history-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><input id="history-search" type="search" data-i18n-placeholder="searchMeetings" placeholder="Search meetings"></label><span id="history-count"></span></div>
       <div class="history-list" id="history-list"></div>
       <button class="danger-button" id="clear-history" data-i18n="deleteAll">Delete all history</button>
     </aside>
-    <article id="meeting-view"><div class="empty-state"><h1 data-i18n="noMeetings">Meeting notes</h1><p data-i18n="noMeetingsCopy">Completed meetings will appear here.</p></div></article>
+    <article id="meeting-view"><div class="empty-state"><div class="empty-icon" aria-hidden="true"><span></span><span></span><span></span></div><h1 data-i18n="noMeetings">Meeting notes</h1><p data-i18n="noMeetingsCopy">Completed meetings will appear here.</p><button id="open-settings-from-history" data-i18n="openSettings">Open settings</button></div></article>
   </main>
   <script type="module" src="history.js"></script>
 </body>

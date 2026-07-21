@@ -1,6 +1,7 @@
 let meetings = [];
 import { localizePage, t } from "./i18n.js";
 let locale = "en";
+let selectedMeetingId = "";
 
 function escapeHtml(value = "") {
   return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]);
@@ -36,13 +37,18 @@ function download(meeting) {
 function showMeeting(id) {
   const meeting = meetings.find((item) => item.id === id);
   if (!meeting) return;
+  selectedMeetingId = id;
   document.querySelectorAll(".meeting-item").forEach((item) => item.classList.toggle("active", item.dataset.id === id));
   const duration = t(locale, "duration", { minutes: Math.floor(meeting.durationSeconds / 60) });
   document.querySelector("#meeting-view").innerHTML = `
     <header class="meeting-head"><h1>${escapeHtml(meeting.title)}</h1><p>${new Date(meeting.startedAt).toLocaleString(locale)} · ${duration}</p><div class="meeting-actions"><button id="copy-meeting">${t(locale, "copy")}</button><button id="download-meeting">${t(locale, "download")}</button><button class="delete-meeting" id="delete-meeting">${t(locale, "delete")}</button></div></header>
     <section class="summary">${markdownToHtml(meeting.summary || t(locale, "meetingNotCreated"))}</section>
     ${meeting.transcript?.length ? `<section class="transcript"><h2>${t(locale, "fullTranscript")}</h2>${meeting.transcript.map((item) => `<div class="transcript-row"><time>${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}</time><strong>${escapeHtml(item.speaker)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}</section>` : ""}`;
-  document.querySelector("#copy-meeting").onclick = () => navigator.clipboard.writeText(meetingMarkdown(meeting));
+  document.querySelector("#copy-meeting").onclick = async (event) => {
+    await navigator.clipboard.writeText(meetingMarkdown(meeting));
+    event.currentTarget.textContent = t(locale, "copied");
+    setTimeout(() => { if (document.querySelector("#copy-meeting")) document.querySelector("#copy-meeting").textContent = t(locale, "copy"); }, 1400);
+  };
   document.querySelector("#download-meeting").onclick = () => download(meeting);
   document.querySelector("#delete-meeting").onclick = () => deleteMeeting(meeting.id);
 }
@@ -62,12 +68,20 @@ async function render() {
   locale = settings.interfaceLanguage || "en";
   document.title = `${t(locale, "historyTitle")} — ${t(locale, "appTitle")}`;
   localizePage(locale);
+  const query = document.querySelector("#history-search").value.trim().toLocaleLowerCase(locale);
+  const visibleMeetings = query ? meetings.filter((meeting) => `${meeting.title} ${meeting.summary || ""}`.toLocaleLowerCase(locale).includes(query)) : meetings;
   const list = document.querySelector("#history-list");
-  list.innerHTML = meetings.map((meeting) => `<button class="meeting-item" data-id="${meeting.id}"><strong>${escapeHtml(meeting.title)}</strong><small>${new Date(meeting.startedAt).toLocaleDateString(locale)} · ${t(locale, "duration", { minutes: Math.floor(meeting.durationSeconds / 60) })}</small></button>`).join("");
+  list.innerHTML = visibleMeetings.map((meeting) => `<button class="meeting-item" data-id="${meeting.id}" aria-current="${meeting.id === selectedMeetingId ? "true" : "false"}"><strong>${escapeHtml(meeting.title)}</strong><small>${new Date(meeting.startedAt).toLocaleDateString(locale)} · ${t(locale, "duration", { minutes: Math.floor(meeting.durationSeconds / 60) })}</small></button>`).join("");
+  if (query && !visibleMeetings.length) list.innerHTML = `<p class="no-results">${t(locale, "noSearchResults")}</p>`;
+  document.querySelector("#history-count").textContent = t(locale, "meetingCount", { count: meetings.length });
+  document.querySelector("#clear-history").hidden = !meetings.length;
   list.querySelectorAll(".meeting-item").forEach((item) => item.onclick = () => showMeeting(item.dataset.id));
   const requestedId = location.hash.slice(1);
-  if (meetings[0]) showMeeting(meetings.some((item) => item.id === requestedId) ? requestedId : meetings[0].id);
+  if (meetings[0] && !selectedMeetingId) showMeeting(meetings.some((item) => item.id === requestedId) ? requestedId : meetings[0].id);
 }
+
+document.querySelector("#history-search").addEventListener("input", () => render());
+document.querySelector("#open-settings-from-history")?.addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 document.querySelector("#clear-history").addEventListener("click", async () => {
   if (!confirm(t(locale, "clearConfirm"))) return;

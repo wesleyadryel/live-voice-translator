@@ -7,7 +7,7 @@ const elements = {
   timer: $("#session-timer"), error: $("#error"), errorCopy: $("#error-copy"),
   keyStatus: $("#key-status"), usage: $("#usage-label"), source: $("#source-label"), target: $("#target-label"),
   setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"),
-  modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device")
+  modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages")
 };
 
 const routeLabels = {
@@ -88,6 +88,14 @@ const MEDIA_LABELS = {
   fr: { source: "Vidéo", target: "Vous", sourceSetting: "Langue de la vidéo", targetSetting: "Traduire vers" }
 };
 
+const CAPTURE_LABELS = {
+  en: { meeting: "Browser meeting", media: "Media tab" },
+  ru: { meeting: "Встреча в браузере", media: "Медиа-вкладка" },
+  es: { meeting: "Reunión web", media: "Pestaña multimedia" },
+  de: { meeting: "Browser-Meeting", media: "Medien-Tab" },
+  fr: { meeting: "Réunion web", media: "Onglet multimédia" }
+};
+
 const TAB_ACCESS_HINT = {
   en: "Close this panel and open it by clicking the Live Voice Translator toolbar icon on the video tab.",
   ru: "Закройте панель и откройте её кнопкой Live Voice Translator на панели Chrome во вкладке с видео.",
@@ -158,6 +166,7 @@ function render(state = currentState) {
   document.body.classList.toggle("is-busy", busy);
   elements.toggle.classList.toggle("is-loading", busy || ["connecting", "reconnecting", "summarizing"].includes(state.phase));
   elements.toggle.disabled = busy;
+  document.querySelectorAll("[data-mode], .quick-settings select, #swap-languages").forEach((control) => { control.disabled = active || busy; });
   elements.toggleLabel.textContent = active ? t(locale, "stop") : activeCaptureKind === "media" ? t(locale, "startTranslation") : t(locale, START_LABELS[currentMode]);
   const iconPath = elements.toggle.querySelector(".button-symbol path");
   if (iconPath) iconPath.setAttribute("d", active ? "M8 8h8v8H8z" : "m9 7 8 5-8 5V7Z");
@@ -190,6 +199,7 @@ async function refresh() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   activeTabUrl = tab?.url || "";
   activeCaptureKind = captureKindFor(tab?.url);
+  elements.captureContext.textContent = (CAPTURE_LABELS[locale] || CAPTURE_LABELS.en)[activeCaptureKind];
   renderCaptureContext(activeCaptureKind);
   document.title = t(locale, "appTitle");
   currentMode = settings.mode;
@@ -198,7 +208,7 @@ async function refresh() {
   elements.interfaceLanguage.value = locale;
   elements.sourceLanguage.value = languages.source;
   elements.targetLanguage.value = languages.target;
-  elements.outgoingDevice.closest(".quick-setting").hidden = activeCaptureKind === "media" || isSupportedConferenceUrl(activeTabUrl);
+  elements.outgoingDevice.closest(".quick-setting").hidden = true;
   elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured");
   elements.usage.textContent = t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 });
   elements.source.textContent = languageLabel(languages.source);
@@ -310,6 +320,15 @@ elements.sourceLanguage.addEventListener("change", async () => {
 elements.targetLanguage.addEventListener("change", async () => {
   const key = activeCaptureKind === "media" ? "mediaTargetLanguage" : "targetLanguage";
   await saveSettings({ [key]: elements.targetLanguage.value });
+  await refresh();
+});
+elements.swapLanguages.addEventListener("click", async () => {
+  if (active || busy) return;
+  const source = elements.sourceLanguage.value;
+  const target = elements.targetLanguage.value;
+  const sourceKey = activeCaptureKind === "media" ? "mediaSourceLanguage" : "sourceLanguage";
+  const targetKey = activeCaptureKind === "media" ? "mediaTargetLanguage" : "targetLanguage";
+  await saveSettings({ [sourceKey]: target, [targetKey]: source });
   await refresh();
 });
 for (const select of [elements.outgoingDevice, elements.incomingDevice]) select.addEventListener("change", async () => {
