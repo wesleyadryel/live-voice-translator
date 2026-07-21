@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Live Voice Translator",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Live two-way voice translation for browser conferences.",
   "minimum_chrome_version": "116",
   "permissions": [

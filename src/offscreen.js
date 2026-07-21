@@ -19,6 +19,7 @@ let reconnecting = false;
 let generation = 0;
 let speakerRecorder = null;
 let speakerAudioChunks = [];
+let preparedCapture = null;
 
 const MODES = {
   translation: { audio: true, notes: false, summary: false },
@@ -177,6 +178,45 @@ function clearLifecycleTimers() {
   sessionTimer = reconnectTimer = null;
 }
 
+async function releasePreparedCapture({ stopTracks = true } = {}) {
+  const capture = preparedCapture;
+  preparedCapture = null;
+  if (!capture) return;
+  try { capture.source.disconnect(); } catch {}
+  if (stopTracks) capture.stream.getTracks().forEach((track) => track.stop());
+  await capture.context.close().catch(() => {});
+}
+
+async function prepareTabCapture(streamId, tabId) {
+  if (state.active) return { ok: true, active: true, preparedTabId: null };
+  await releasePreparedCapture();
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
+    video: false
+  });
+  const context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  source.connect(context.destination);
+  await context.resume();
+  const capture = { tabId, stream, context, source };
+  preparedCapture = capture;
+  stream.getTracks().forEach((track) => {
+    track.onended = () => {
+      if (preparedCapture === capture) releasePreparedCapture({ stopTracks: false }).catch(() => {});
+    };
+  });
+  return { ok: true, preparedTabId: tabId };
+}
+
+async function takePreparedCapture(tabId) {
+  const capture = preparedCapture;
+  if (!capture || capture.tabId !== tabId) throw new Error("TAB_CAPTURE_NOT_PREPARED");
+  preparedCapture = null;
+  try { capture.source.disconnect(); } catch {}
+  await capture.context.close().catch(() => {});
+  return capture.stream;
+}
+
 async function stop({ reason = "user", notify = false, error = "", persist = true } = {}) {
   const settings = activeSettings;
   const capturedMeeting = meeting;
@@ -265,7 +305,7 @@ function scheduleReconnect(settings, mode) {
   }, Math.min(16000, 1000 * 2 ** (attempt - 1)));
 }
 
-async function start(streamId, suppliedSettings = {}) {
+async function start(suppliedSettings = {}) {
   await stop();
   const settings = { ...DEFAULT_SETTINGS, ...suppliedSettings };
   activeSettings = settings;
@@ -278,7 +318,7 @@ async function start(streamId, suppliedSettings = {}) {
     if (settings.captureKind !== "media") {
       microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     }
-    tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } }, video: false });
+    tabStream = await takePreparedCapture(settings.captureTabId);
     if (mode.notes && settings.speakerDiarization) startSpeakerRecording(tabStream);
     tabStream.getTracks().forEach((track) => { track.onended = () => { if (state.active) stop({ reason: "tab_closed", notify: true }); }; });
     await applySink(outgoingOutput, settings.outgoingDeviceId);
@@ -302,10 +342,10 @@ async function start(streamId, suppliedSettings = {}) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
   if (message.type === "GET_STATUS") {
-    sendResponse({ ok: true, state });
+    sendResponse({ ok: true, state, preparedTabId: preparedCapture?.tabId || null });
     return false;
   }
-  const action = message.type === "START_TRANSLATION" ? start(message.streamId, message.settings) : message.type === "STOP_TRANSLATION" ? stop() : Promise.resolve({ ok: false, error: t(activeSettings.interfaceLanguage, "unknownCommand") });
+  const action = message.type === "PREPARE_TAB_CAPTURE" ? prepareTabCapture(message.streamId, message.tabId) : message.type === "START_TRANSLATION" ? start(message.settings) : message.type === "STOP_TRANSLATION" ? stop() : Promise.resolve({ ok: false, error: t(activeSettings.interfaceLanguage, "unknownCommand") });
   action.then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
   return true;
 });

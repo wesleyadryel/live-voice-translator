@@ -2,12 +2,30 @@ import { t } from "./i18n.js";
 
 let offscreenCreating;
 
-// The action click grants activeTab, then opens a panel for that exact tab.
-// Chrome's automatic panel toggle skips the action event, so tab capture can
-// otherwise be rejected as "extension has not been invoked".
 chrome.action.onClicked.addListener((tab) => {
   if (!tab.id) return;
-  chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+  (async () => {
+    await ensureOffscreenDocument();
+    const status = await chrome.runtime.sendMessage({ target: "offscreen", type: "GET_STATUS" });
+    if (!status?.state?.active && /^https?:/i.test(tab.url || "")) {
+      // tabCapture authorization exists only inside this action event. Consume
+      // the stream ID immediately and let the offscreen document hold the stream
+      // until the user presses Start.
+      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+      const prepared = await chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "PREPARE_TAB_CAPTURE",
+        streamId,
+        tabId: tab.id
+      });
+      if (!prepared?.ok) throw new Error(prepared?.error || "Could not prepare tab audio");
+    }
+    await setActionState(Boolean(status?.state?.active));
+    await chrome.sidePanel.open({ tabId: tab.id });
+  })().catch(async () => {
+    await setActionState(false, true).catch(() => {});
+    await chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+  });
 });
 
 async function currentLocale() {
@@ -75,7 +93,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "START_TRANSLATION") {
     (async () => {
       await ensureOffscreenDocument();
-      const settings = { ...(await chrome.storage.local.get()), captureKind: message.captureKind || "meeting" };
+      const settings = { ...(await chrome.storage.local.get()), captureKind: message.captureKind || "meeting", captureTabId: message.tabId };
       const locale = settings.interfaceLanguage || "en";
       if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
         throw new Error(t(locale, "conferenceCable"));
@@ -83,13 +101,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && settings.outgoingDeviceId === settings.incomingDeviceId) {
         throw new Error(t(locale, "differentOutputs"));
       }
-      const streamId = await chrome.tabCapture.getMediaStreamId({
-        targetTabId: message.tabId
-      });
       const result = await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "START_TRANSLATION",
-        streamId,
         settings
       });
       await setActionState(Boolean(result?.ok && result?.state?.active), !result?.ok);

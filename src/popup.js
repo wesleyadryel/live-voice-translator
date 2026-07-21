@@ -1,6 +1,5 @@
 import { loadSettings, maskKey, saveSettings } from "./config.js";
 import { languageName, localizePage, t } from "./i18n.js";
-import { RealtimeTranslator } from "./realtime.js";
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -27,7 +26,7 @@ let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
 let actionError = "";
 let activeCaptureKind = "meeting";
-let localMediaSession = null;
+let preparedTabId = null;
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -39,7 +38,7 @@ function friendlyError(error) {
   if (/OpenAI 401|invalid.*key|Incorrect API key/i.test(message)) return t(locale, "keyError");
   if (/OpenAI 429|quota|rate limit/i.test(message)) return t(locale, "quota");
   if (/Requested device not found|NotFoundError/i.test(message)) return t(locale, "deviceMissing");
-  if (/Extension has not been invoked|activeTab permission/i.test(message)) return TAB_ACCESS_HINT[locale] || TAB_ACCESS_HINT.en;
+  if (/Extension has not been invoked|activeTab permission|TAB_CAPTURE_NOT_PREPARED/i.test(message)) return TAB_ACCESS_HINT[locale] || TAB_ACCESS_HINT.en;
   if (/Cannot capture|tabCapture|active tab/i.test(message)) return t(locale, "conferenceTab");
   if (/virtual|аудиокабель|different devices|Conference mode/i.test(message)) return message.includes("different") || message.includes("разными") ? t(locale, "differentOutputs") : t(locale, "conferenceCable");
   if (/network|fetch|connection/i.test(message)) return t(locale, "network");
@@ -74,11 +73,11 @@ const MEDIA_LABELS = {
 };
 
 const TAB_ACCESS_HINT = {
-  en: "Click the Live Voice Translator icon once on this tab, then start translation.",
-  ru: "Нажмите иконку Live Voice Translator на этой вкладке, затем запустите перевод.",
-  es: "Haga clic en el icono de Live Voice Translator en esta pestaña y luego inicie la traducción.",
-  de: "Klicken Sie auf dieser Registerkarte auf das Symbol von Live Voice Translator und starten Sie dann die Übersetzung.",
-  fr: "Cliquez sur l’icône Live Voice Translator dans cet onglet, puis démarrez la traduction."
+  en: "Close this panel and open it by clicking the Live Voice Translator toolbar icon on the video tab.",
+  ru: "Закройте панель и откройте её кнопкой Live Voice Translator на панели Chrome во вкладке с видео.",
+  es: "Cierre este panel y ábralo con el icono de Live Voice Translator en la barra de Chrome desde la pestaña del vídeo.",
+  de: "Schließen Sie dieses Panel und öffnen Sie es über das Live-Voice-Translator-Symbol in der Chrome-Leiste des Video-Tabs.",
+  fr: "Fermez ce panneau et ouvrez-le avec l’icône Live Voice Translator dans la barre Chrome de l’onglet vidéo."
 };
 
 const MEDIA_TRANSLATION_MODE_HINT = {
@@ -100,67 +99,6 @@ function renderCaptureContext(kind) {
   routeLabels.targetSetting.textContent = t(locale, "participantLanguage");
 }
 
-function captureCurrentTabAudio() {
-  return new Promise((resolve, reject) => {
-    chrome.tabCapture.capture({ audio: true, video: false }, (stream) => {
-      const error = chrome.runtime.lastError;
-      if (error) reject(new Error(error.message));
-      else if (!stream) reject(new Error("Chrome did not provide audio from this tab."));
-      else resolve(stream);
-    });
-  });
-}
-
-async function startMediaTranslation(settings) {
-  const stream = await captureCurrentTabAudio();
-  const output = new Audio();
-  output.autoplay = true;
-  const startedAt = Date.now();
-  localMediaSession = { stream, output, translator: null, startedAt };
-  currentState = { active: true, phase: "connecting", error: "", startedAt, durationSeconds: 0, transcriptCount: 0 };
-  render(currentState);
-  try {
-    const translator = new RealtimeTranslator({
-      apiKey: settings.apiKey,
-      inputStream: stream,
-      outputElement: output,
-      from: settings.sourceLanguage,
-      to: settings.targetLanguage,
-      voice: settings.incomingVoice,
-      onState: (phase) => {
-        if (!localMediaSession) return;
-        currentState = { ...currentState, phase };
-        render(currentState);
-      },
-      onDisconnect: () => stopMediaTranslation({ error: t(locale, "network") })
-    });
-    localMediaSession.translator = translator;
-    await translator.connect();
-    currentState = { ...currentState, active: true, phase: "live" };
-    return { ok: true, state: currentState };
-  } catch (error) {
-    await stopMediaTranslation({ error: error.message, countUsage: false });
-    throw error;
-  }
-}
-
-async function stopMediaTranslation({ error = "", countUsage = true } = {}) {
-  const session = localMediaSession;
-  if (!session) return { ok: true, state: currentState };
-  localMediaSession = null;
-  session.translator?.close();
-  session.stream?.getTracks().forEach((track) => track.stop());
-  session.output.pause();
-  session.output.srcObject = null;
-  const durationSeconds = Math.max(0, Math.round((Date.now() - session.startedAt) / 1000));
-  if (countUsage && durationSeconds > 0) {
-    const latest = await loadSettings();
-    await saveSettings({ usageSeconds: Number(latest.usageSeconds || 0) + durationSeconds, sessionCount: Number(latest.sessionCount || 0) + 1 });
-  }
-  currentState = { active: false, phase: error ? "error" : "idle", error, startedAt: 0, durationSeconds, transcriptCount: 0 };
-  return { ok: true, state: currentState };
-}
-
 async function microphonePermission() {
   try { return (await navigator.permissions.query({ name: "microphone" })).state; }
   catch { return "prompt"; }
@@ -174,10 +112,14 @@ function setCheck(name, state, copy) {
 
 async function renderPreflight(settings) {
   setCheck("api", settings.apiKey ? "ok" : "error", settings.apiKey ? t(locale, "configured") : t(locale, "required"));
-  const permission = await microphonePermission();
-  setCheck("microphone", permission === "granted" ? "ok" : permission === "denied" ? "error" : "warn", permission === "granted" ? t(locale, "allowed") : permission === "denied" ? t(locale, "error") : t(locale, "connecting"));
-  const voiceMode = ["translation", "both"].includes(settings.mode);
   const mediaCapture = activeCaptureKind === "media";
+  const permission = mediaCapture ? "not-required" : await microphonePermission();
+  setCheck("microphone", permission === "not-required" || permission === "granted" ? "ok" : permission === "denied" ? "error" : "warn", permission === "not-required" ? t(locale, "notRequired") : permission === "granted" ? t(locale, "allowed") : permission === "denied" ? t(locale, "error") : t(locale, "connecting"));
+  if (mediaCapture) {
+    setCheck("route", preparedTabId ? "ok" : "error", preparedTabId ? t(locale, "ready") : t(locale, "required"));
+    return;
+  }
+  const voiceMode = ["translation", "both"].includes(settings.mode);
   const conferenceReady = mediaCapture || settings.audioProfile !== "conference" || (settings.outgoingDeviceId && settings.outgoingDeviceId !== "default" && settings.outgoingDeviceId !== settings.incomingDeviceId);
   setCheck("route", !voiceMode || conferenceReady ? "ok" : "error", !voiceMode || mediaCapture ? t(locale, "notRequired") : settings.audioProfile === "solo" ? "Mac" : conferenceReady ? t(locale, "ready") : t(locale, "required"));
 }
@@ -229,13 +171,10 @@ async function refresh() {
   elements.target.textContent = languageLabel(settings.targetLanguage);
   elements.setup.hidden = Boolean(settings.apiKey);
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
+  const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+  preparedTabId = result?.preparedTabId || null;
   await renderPreflight(settings);
-  if (localMediaSession) {
-    render(currentState);
-  } else {
-    const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
-    render(result?.state || { active: false, phase: "idle", error: result?.error || "" });
-  }
+  render(result?.state || { active: false, phase: "idle", error: result?.error || "" });
 }
 
 async function listOutputs(settings) {
@@ -262,7 +201,7 @@ elements.toggle.addEventListener("click", async () => {
   render();
   try {
     if (active) {
-      const result = localMediaSession ? await stopMediaTranslation() : await chrome.runtime.sendMessage({ type: "STOP_TRANSLATION" });
+      const result = await chrome.runtime.sendMessage({ type: "STOP_TRANSLATION" });
       if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
       currentState = result.state;
       if (result.meetingId) await chrome.tabs.create({ url: `${chrome.runtime.getURL("src/history.html")}#${result.meetingId}` });
@@ -270,7 +209,8 @@ elements.toggle.addEventListener("click", async () => {
       if (!currentSettings.apiKey) { chrome.runtime.openOptionsPage(); return; }
       if (activeCaptureKind === "media") {
         if (currentMode !== "translation") throw new Error(MEDIA_TRANSLATION_MODE_HINT[locale] || MEDIA_TRANSLATION_MODE_HINT.en);
-        const result = await startMediaTranslation(currentSettings);
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const result = await chrome.runtime.sendMessage({ type: "START_TRANSLATION", tabId: tab?.id, captureKind: "media" });
         if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
         currentState = result.state;
         return;
