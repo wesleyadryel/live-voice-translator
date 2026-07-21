@@ -12,35 +12,39 @@
 <body class="options-shell">
   <main class="settings">
     <header>
-      <div class="brand-row"><div class="brand-mark"><span></span><span></span><span></span></div><div><small>LIVE VOICE</small><strong data-i18n="settingsTitle">Translation settings</strong></div></div>
-      <div class="settings-header-meta"><span class="secure-badge" data-i18n="localKey">Key stored locally</span><p data-i18n="keyPrivacy">The key stays only on this device and connects directly to OpenAI.</p></div>
+      <div class="brand-row"><img class="brand-mark" src="../assets/icon-128.png" alt="" aria-hidden="true"><div><small>LIVE VOICE</small><strong data-i18n="settingsTitle">Translation settings</strong></div></div>
+      <div class="settings-header-actions">
+        <label class="header-language-picker"><span data-i18n="interfaceLanguage">Interface language</span><select id="interface-language"><option value="en">English</option><option value="ru">Русский</option><option value="es">Español</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label>
+        <div class="settings-header-meta"><span class="secure-badge" data-i18n="localKey">Key stored locally</span><p data-i18n="keyPrivacy">The key stays only on this device and connects directly to OpenAI.</p></div>
+      </div>
     </header>
     <form id="settings-form" class="compact-settings-form">
-      <section class="language-section">
-        <div class="section-heading"><span class="section-number">01</span><div><h2 data-i18n="interfaceLanguage">Interface language</h2><p data-i18n="interfaceLanguageHelp">Choose the language used in the extension.</p></div></div>
-        <label><span data-i18n="interfaceLanguage">Interface language</span><select id="interface-language"><option value="en">English</option><option value="ru">Русский</option><option value="es">Español</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label>
-      </section>
       <section class="api-section">
-        <div class="section-heading"><span class="section-number">02</span><div><h2 data-i18n="api">OpenAI API</h2><p data-i18n="apiSectionHelp">Used for live speech translation and meeting notes.</p></div></div>
+        <div class="section-heading"><span class="section-number">01</span><div><h2 data-i18n="api">OpenAI API</h2><p data-i18n="apiSectionHelp">Used for live speech translation and meeting notes.</p></div></div>
         <label><span data-i18n="apiKey">API key</span><div class="input-row"><input id="api-key" type="password" autocomplete="off" placeholder="sk-proj-…"><button type="button" class="secondary-button" id="reveal-key" data-i18n="show">Show</button></div></label>
-        <div class="input-row"><button type="button" class="secondary-button" id="test-key" data-i18n="testConnection">Test connection</button><span id="api-test-status" aria-live="polite"></span></div>
-        <p class="help" data-i18n="apiHelp">Create a separate key and set a spending limit in your OpenAI account.</p>
+        <div class="api-meta-row">
+          <p class="help" data-i18n="apiHelp">Create a separate key and set a spending limit in your OpenAI account.</p>
+          <div class="api-test-control"><span id="api-test-status" aria-live="polite"></span><button type="button" class="secondary-button api-test-button" id="test-key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.2 17 19 7"/></svg><span data-i18n="testConnection">Test connection</span></button></div>
+        </div>
       </section>
       <section class="two-column voice-section">
-        <div class="section-heading full-span"><span class="section-number">03</span><div><h2 data-i18n="languagesAndVoices">Languages and voices</h2><p data-i18n="languagesAndVoicesHelp">Set both directions of the conversation.</p></div></div>
+        <div class="section-heading full-span"><span class="section-number">02</span><div><h2 data-i18n="languagesAndVoices">Languages and voices</h2><p data-i18n="languagesAndVoicesHelp">Set both directions of the conversation.</p></div></div>
         <div class="voice-column"><span class="direction-label" data-i18n="toParticipant">You → participant</span><h3 data-i18n="youSpeak">You speak</h3><label><span data-i18n="language">Language</span><select id="source-language"><option value="Russian" data-i18n="languageRussian">Russian</option><option value="English" data-i18n="languageEnglish">English</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option></select></label><label><span data-i18n="voiceForParticipant">Voice for participant</span><select id="outgoing-voice"><option value="marin">Marin</option><option value="cedar">Cedar</option><option value="alloy">Alloy</option><option value="verse">Verse</option></select></label></div>
         <div class="voice-column"><span class="direction-label" data-i18n="toYou">Participant → you</span><h3 data-i18n="youHear">You hear</h3><label><span data-i18n="participantLanguage">Participant speaks</span><select id="target-language"><option value="English" data-i18n="languageEnglish">English</option><option value="Russian" data-i18n="languageRussian">Russian</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option></select></label><label><span data-i18n="voiceForYou">Voice for you</span><select id="incoming-voice"><option value="cedar">Cedar</option><option value="marin">Marin</option><option value="alloy">Alloy</option><option value="verse">Verse</option></select></label></div>
       </section>
       <section class="audio-section">
-        <div class="section-heading"><span class="section-number">04</span><div><h2 data-i18n="audioOutputs">Audio outputs</h2><p data-i18n="audioSectionHelp">Choose where you hear the participant translation.</p></div></div>
+        <div class="section-heading"><span class="section-number">03</span><div><h2 data-i18n="audioOutputs">Audio outputs</h2><p data-i18n="audioSectionHelp">Choose where you hear the participant translation.</p></div></div>
         <label hidden><span data-i18n="outputParticipant">To meeting</span><select id="outgoing-device"><option value="default" data-i18n="systemOutput">System output</option></select></label>
         <label><span data-i18n="outputYou">For you</span><select id="incoming-device"><option value="default" data-i18n="systemOutput">System output</option></select></label>
         <label hidden><span data-i18n="monitor">Monitor your translated voice</span><select id="monitor-level"><option value="off" data-i18n="noMonitor">Do not monitor</option><option value="quiet" data-i18n="quietMonitor">Quietly, for checking</option><option value="full" data-i18n="fullMonitor">Full volume</option></select></label>
         <p class="help" data-i18n="virtualCableHelp">In supported browser meetings, the translated voice replaces the outgoing microphone automatically.</p>
       </section>
       <section class="notes-section">
-        <div class="section-heading"><span class="section-number">05</span><div><h2 data-i18n="notesTitle">Meeting notes</h2><p data-i18n="notesSectionHelp">Build a personal summary template for every meeting.</p></div></div>
-        <label><span data-i18n="detail">Detail</span><select id="summary-detail"><option value="brief" data-i18n="brief">Brief</option><option value="standard" data-i18n="standard">Standard</option><option value="detailed" data-i18n="detailed">Detailed</option></select></label>
+        <div class="section-heading"><span class="section-number">04</span><div><h2 data-i18n="notesTitle">Meeting notes</h2><p data-i18n="notesSectionHelp">Build a personal summary template for every meeting.</p></div></div>
+        <div class="notes-controls">
+          <label><span data-i18n="detail">Detail</span><select id="summary-detail"><option value="brief" data-i18n="brief">Brief</option><option value="standard" data-i18n="standard">Standard</option><option value="detailed" data-i18n="detailed">Detailed</option></select></label>
+          <label><span data-i18n="sessionLimit">Session limit</span><select id="max-session-minutes"><option value="30" data-i18n="minutes30">30 minutes</option><option value="60" data-i18n="hour1">1 hour</option><option value="90" data-i18n="hour90">1 hour 30 minutes</option><option value="120" data-i18n="hours2">2 hours</option><option value="180" data-i18n="hours3">3 hours</option></select></label>
+        </div>
         <div class="summary-options" role="group" data-i18n-aria="summarySections" aria-label="Summary sections">
           <p data-i18n="summarySectionsHelp">Choose exactly what the meeting summary should include.</p>
           <label class="check-row"><input id="summary-overview" type="checkbox"><span data-i18n="summaryOverview">Overview</span></label>
@@ -52,7 +56,6 @@
           <label class="check-row"><input id="summary-questions" type="checkbox"><span data-i18n="summaryQuestions">Open questions</span></label>
         </div>
         <label class="check-row"><input id="speaker-diarization" type="checkbox"><span data-i18n="speakerDiarization">Identify different participants in the final transcript</span></label>
-        <label><span data-i18n="sessionLimit">Session limit</span><select id="max-session-minutes"><option value="30" data-i18n="minutes30">30 minutes</option><option value="60" data-i18n="hour1">1 hour</option><option value="90" data-i18n="hour90">1 hour 30 minutes</option><option value="120" data-i18n="hours2">2 hours</option><option value="180" data-i18n="hours3">3 hours</option></select></label>
       </section>
       <div class="form-actions"><span id="save-status" role="status" aria-live="polite"></span><button class="primary-button" type="submit" data-i18n="save">Save settings</button></div>
     </form>

@@ -11,6 +11,7 @@ let microphoneStream;
 let tabStream;
 let state = freshState();
 let meeting = null;
+let liveTranscript = [];
 let activeSettings = { ...DEFAULT_SETTINGS };
 let sessionStartedAt = 0;
 let sessionTimer = null;
@@ -27,6 +28,7 @@ const MODES = {
   both: { audio: true, notes: true, summary: true },
   transcript: { audio: false, notes: true, summary: false }
 };
+const MAX_LIVE_TRANSCRIPT_ITEMS = 40;
 
 const SUMMARY_SECTION_TITLES = {
   Russian: ["Краткое содержание", "Основные темы", "Принятые решения", "Задачи", "Дедлайны", "Ответственные", "Открытые вопросы"],
@@ -82,9 +84,20 @@ async function stopSpeakerRecording() {
 }
 
 function addTranscript(speaker, text, language, speakerRole = "") {
-  if (!meeting || !text) return;
-  meeting.transcript.push({ speaker, speakerRole, text, language, offsetSeconds: Math.max(0, Math.round((Date.now() - meeting.startedAt) / 1000)) });
-  state.transcriptCount = meeting.transcript.length;
+  if (!text) return;
+  const startedAt = meeting?.startedAt || sessionStartedAt || Date.now();
+  const item = {
+    id: crypto.randomUUID(),
+    speaker,
+    speakerRole,
+    text,
+    language,
+    offsetSeconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+  };
+  liveTranscript.push(item);
+  if (liveTranscript.length > MAX_LIVE_TRANSCRIPT_ITEMS) liveTranscript = liveTranscript.slice(-MAX_LIVE_TRANSCRIPT_ITEMS);
+  if (meeting) meeting.transcript.push(item);
+  state.transcriptCount += 1;
 }
 
 function responseText(payload) {
@@ -324,6 +337,7 @@ async function start(suppliedSettings = {}) {
   if (!settings.apiKey) throw new Error(tr(settings, "addApiKey"));
   const mode = MODES[settings.mode] || MODES.both;
   sessionStartedAt = Date.now();
+  liveTranscript = [];
   meeting = mode.notes ? { id: crypto.randomUUID(), title: tr(settings, "meetingTitle", { date: new Date().toLocaleString(settings.interfaceLanguage || "en") }), startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
   state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
@@ -354,7 +368,7 @@ async function start(suppliedSettings = {}) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
   if (message.type === "GET_STATUS") {
-    sendResponse({ ok: true, state, preparedTabId: preparedCapture?.tabId || null });
+    sendResponse({ ok: true, state, liveTranscript: liveTranscript.slice(-16), preparedTabId: preparedCapture?.tabId || null });
     return false;
   }
   if (message.type === "ADD_OUTGOING_TRANSCRIPT") {

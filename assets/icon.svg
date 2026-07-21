@@ -1,10 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="32" fill="#0b0d0c"/>
-  <circle cx="64" cy="64" r="42" fill="#121513" stroke="#344038" stroke-width="3"/>
-  <g fill="#6cf59b">
-    <rect x="43" y="53" width="6" height="22" rx="3"/>
-    <rect x="54" y="40" width="6" height="48" rx="3"/>
-    <rect x="65" y="31" width="6" height="66" rx="3"/>
-    <rect x="76" y="45" width="6" height="38" rx="3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Live voice translation">
+  <defs>
+    <linearGradient id="surface" x1="20" y1="8" x2="104" y2="122" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1BB8FF"/>
+      <stop offset=".22" stop-color="#0786F5"/>
+      <stop offset=".62" stop-color="#075CE8"/>
+      <stop offset="1" stop-color="#153BD0"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="64" y1="0" x2="64" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".30"/>
+      <stop offset=".18" stop-color="#FFFFFF" stop-opacity=".06"/>
+      <stop offset=".62" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#001A91" stop-opacity=".18"/>
+    </linearGradient>
+    <linearGradient id="returnArrow" x1="91" y1="90" x2="42" y2="103" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1685FA"/>
+      <stop offset=".42" stop-color="#70CFFF"/>
+      <stop offset="1" stop-color="#A8E7FF"/>
+    </linearGradient>
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#00249D" flood-opacity=".28"/>
+    </filter>
+  </defs>
+
+  <rect width="128" height="128" rx="29" fill="url(#surface)"/>
+  <rect x="1.5" y="1.5" width="125" height="125" rx="27.5" fill="url(#glass)" stroke="#73D8FF" stroke-opacity=".38" stroke-width="3"/>
+
+  <!-- Circular translation arrows -->
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" filter="url(#softShadow)">
+    <path d="M27 50C34 29 54 22 70 24c10 1 18 5 25 12" stroke-width="6"/>
+    <path d="m89 30 8 8-11 1" stroke-width="6"/>
+    <path d="M50 95c-15 1-25-8-28-21" stroke-width="6"/>
+    <path d="m43 88 8 7-7 8" stroke-width="6"/>
   </g>
+  <g fill="none" stroke="url(#returnArrow)" stroke-linecap="round" stroke-linejoin="round" filter="url(#softShadow)">
+    <path d="M91 91c-12 11-31 14-46 7" stroke-width="6"/>
+    <path d="m49 91-7 7 9 6" stroke-width="6"/>
+  </g>
+
+  <!-- Voice waveform -->
+  <g fill="#FFFFFF" filter="url(#softShadow)">
+    <rect x="21" y="59" width="6" height="21" rx="3"/>
+    <rect x="30" y="52" width="7" height="33" rx="3.5"/>
+    <rect x="41" y="43" width="9" height="49" rx="4.5"/>
+    <rect x="54" y="54" width="7" height="30" rx="3.5"/>
+    <rect x="64" y="61" width="6" height="20" rx="3"/>
+  </g>
+
+  <!-- Translation speech bubble -->
+  <path d="M86 46c14 0 25 10 25 23 0 8-4 15-10 19l-1 12-11-8h-5c-14 0-25-10-25-23s11-23 27-23Z" fill="#FFFFFF" filter="url(#softShadow)"/>
+
+  <!-- A language mark -->
+  <path d="M72 82 83 56c1-2 2-3 4-3s3 1 4 3l10 26h-8l-2-7H81l-2 7h-7Zm11-13h7l-3-10-4 10Z" fill="#0861E8"/>
 </svg>

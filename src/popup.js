@@ -7,7 +7,8 @@ const elements = {
   timer: $("#session-timer"), error: $("#error"), errorCopy: $("#error-copy"),
   keyStatus: $("#key-status"), usage: $("#usage-label"), source: $("#source-label"), target: $("#target-label"),
   setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"),
-  modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages")
+  modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages"),
+  transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy")
 };
 
 const routeLabels = {
@@ -29,6 +30,8 @@ let activeCaptureKind = "meeting";
 let preparedTabId = null;
 let activeTabUrl = "";
 let outgoingRouteStatus = null;
+let liveTranscript = [];
+let transcriptSignature = "";
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -181,7 +184,51 @@ function render(state = currentState) {
     elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
   }
   elements.notice.hidden = active || !["notes", "both", "transcript"].includes(currentMode) || Boolean(currentSettings.recordingNoticeAccepted);
+  renderTranscript();
   updateTimer();
+}
+
+function renderTranscript() {
+  const savedWithMeeting = ["notes", "both", "transcript"].includes(currentMode);
+  elements.transcriptPolicy.textContent = t(locale, savedWithMeeting ? "transcriptSaved" : "transcriptTemporary");
+  elements.transcriptPolicy.dataset.saved = String(savedWithMeeting);
+  elements.transcriptCount.textContent = String(currentState.transcriptCount || liveTranscript.length || 0);
+
+  const signature = `${locale}:${liveTranscript.map((item) => `${item.id}:${item.text}`).join("|")}`;
+  if (signature === transcriptSignature) {
+    updateTranscriptEmptyState();
+    return;
+  }
+  const wasNearBottom = elements.transcriptFeed.scrollHeight - elements.transcriptFeed.scrollTop - elements.transcriptFeed.clientHeight < 48;
+  transcriptSignature = signature;
+  elements.transcriptFeed.replaceChildren();
+  if (!liveTranscript.length) {
+    elements.transcriptFeed.append(elements.transcriptEmpty);
+    updateTranscriptEmptyState();
+    return;
+  }
+  for (const item of liveTranscript) {
+    const line = document.createElement("article");
+    line.className = `transcript-line ${item.speakerRole === "you" ? "is-you" : "is-participant"}`;
+    const meta = document.createElement("header");
+    const speaker = document.createElement("strong");
+    const time = document.createElement("time");
+    const copy = document.createElement("p");
+    speaker.textContent = item.speaker || t(locale, item.speakerRole === "you" ? "speakerYou" : "speakerParticipant");
+    time.textContent = formatDuration(item.offsetSeconds || 0);
+    copy.textContent = item.text;
+    meta.append(speaker, time);
+    line.append(meta, copy);
+    elements.transcriptFeed.append(line);
+  }
+  if (wasNearBottom) elements.transcriptFeed.scrollTop = elements.transcriptFeed.scrollHeight;
+}
+
+function updateTranscriptEmptyState() {
+  if (!elements.transcriptEmpty.isConnected) return;
+  elements.transcriptEmpty.classList.toggle("is-listening", active);
+  elements.transcriptEmpty.querySelector("strong").textContent = t(locale, active ? "transcriptListening" : "transcriptWaitingTitle");
+  elements.transcriptEmpty.querySelector("p").textContent = t(locale, active ? "transcriptListeningCopy" : "transcriptWaitingCopy");
 }
 
 function updateTimer() {
@@ -216,6 +263,7 @@ async function refresh() {
   elements.setup.hidden = Boolean(settings.apiKey);
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+  liveTranscript = Array.isArray(result?.liveTranscript) ? result.liveTranscript : [];
   preparedTabId = result?.preparedTabId || null;
   outgoingRouteStatus = result?.outgoingRouteStatus || null;
   await renderPreflight(settings);
@@ -339,4 +387,4 @@ for (const select of [elements.outgoingDevice, elements.incomingDevice]) select.
 
 refresh().then(() => listOutputs(currentSettings)).catch((error) => render({ active: false, phase: "error", error: friendlyError(error) }));
 setInterval(updateTimer, 1000);
-setInterval(() => { if (document.visibilityState === "visible" && !busy) refresh().catch(() => {}); }, 2500);
+setInterval(() => { if (document.visibilityState === "visible" && !busy) refresh().catch(() => {}); }, 1000);

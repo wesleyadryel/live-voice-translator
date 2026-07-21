@@ -11,7 +11,7 @@
 <body class="panel-shell compact-panel">
   <main class="control-panel">
     <header class="mac-toolbar">
-      <div class="app-identity"><span class="app-icon" aria-hidden="true"><i></i><i></i><i></i></span><div><small>LIVE VOICE</small><strong data-i18n="session">Meeting interpreter</strong></div></div>
+      <div class="app-identity"><img class="app-icon" src="../assets/icon-128.png" alt="" aria-hidden="true"><div><small>LIVE VOICE</small><strong data-i18n="session">Meeting interpreter</strong></div></div>
       <div class="toolbar-actions">
         <select id="interface-language" class="interface-language" aria-label="Interface language" data-i18n-aria="interfaceLanguage"><option value="en">EN</option><option value="ru">RU</option><option value="es">ES</option><option value="de">DE</option><option value="fr">FR</option></select>
         <button class="toolbar-text-button" id="open-history" data-i18n="history">History</button>
@@ -30,7 +30,7 @@
     <section class="control-section mode-section">
       <div class="section-label"><span data-i18n="mode">Mode</span></div>
       <nav class="mac-segmented" aria-label="Mode" data-i18n-aria="mode"><button data-mode="translation" data-i18n="translation">Translate</button><button data-mode="notes" data-i18n="notes">Notes</button><button data-mode="both" data-i18n="both">Both</button><button data-mode="transcript" data-i18n="transcript">Text</button></nav>
-      <p class="mode-help" id="mode-help">Translate the conversation aloud without saving text.</p>
+      <p class="mode-help" id="mode-help">Your speech is translated for the participant, and their speech is translated for you. Live text is temporary and is not added to meeting history.</p>
     </section>
 
     <section class="quick-settings" aria-label="Meeting settings" data-i18n-aria="settingsTitle">
@@ -45,6 +45,19 @@
     <div class="notice" id="recording-notice" hidden><p data-i18n="notice">In note modes, audio is sent to OpenAI. History stays local.</p><button id="accept-notice" data-i18n="understood">Got it</button></div>
     <div class="error-callout" id="error" role="alert" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3.5v.1M10.3 3.6 2.5 17.1A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.9L13.7 3.6a2 2 0 0 0-3.4 0Z"/></svg><span id="error-copy"></span><button id="error-settings" data-i18n="fix">Fix</button></div>
     <button class="session-button" id="toggle"><span class="button-symbol"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z"/></svg></span><span id="toggle-label">Start translation</span><span class="button-progress" aria-hidden="true"></span></button>
+    <section class="live-transcript" id="live-transcript" aria-label="Live transcript" data-i18n-aria="liveTranscript">
+      <header class="transcript-toolbar">
+        <div><strong data-i18n="liveTranscript">Live transcript</strong><span id="transcript-count">0</span></div>
+        <span class="transcript-policy" id="transcript-policy" data-i18n="transcriptTemporary">Temporary</span>
+      </header>
+      <div class="transcript-feed" id="transcript-feed" aria-live="polite" aria-relevant="additions text">
+        <div class="transcript-empty" id="transcript-empty">
+          <span class="transcript-empty-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          <strong data-i18n="transcriptWaitingTitle">Your conversation will appear here</strong>
+          <p data-i18n="transcriptWaitingCopy">Start a meeting to see speech as text in real time.</p>
+        </div>
+      </div>
+    </section>
     <footer class="panel-footer"><span id="usage-label">Used 0 min · 0 sessions</span><span id="key-status">API not configured</span></footer>
   </main>
   <script type="module" src="popup.js"></script>
