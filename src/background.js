@@ -1,17 +1,30 @@
 import { t } from "./i18n.js";
 
 let offscreenCreating;
+let lastCaptureError = "";
+
+// This preference persists in the Chrome profile across extension reloads.
+// It must be reset explicitly or Chrome opens the side panel itself and skips
+// chrome.action.onClicked, so tabCapture never receives its required gesture.
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 
 chrome.action.onClicked.addListener((tab) => {
   if (!tab.id) return;
+  const panelPromise = chrome.sidePanel.open({ tabId: tab.id });
+  const streamIdPromise = /^https?:/i.test(tab.url || "") ? chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }) : null;
   (async () => {
+    lastCaptureError = "";
+    if (!streamIdPromise) {
+      await panelPromise;
+      return;
+    }
+    const streamId = await streamIdPromise;
     await ensureOffscreenDocument();
     const status = await chrome.runtime.sendMessage({ target: "offscreen", type: "GET_STATUS" });
-    if (!status?.state?.active && /^https?:/i.test(tab.url || "")) {
+    if (!status?.state?.active) {
       // tabCapture authorization exists only inside this action event. Consume
       // the stream ID immediately and let the offscreen document hold the stream
       // until the user presses Start.
-      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
       const prepared = await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "PREPARE_TAB_CAPTURE",
@@ -21,10 +34,11 @@ chrome.action.onClicked.addListener((tab) => {
       if (!prepared?.ok) throw new Error(prepared?.error || "Could not prepare tab audio");
     }
     await setActionState(Boolean(status?.state?.active));
-    await chrome.sidePanel.open({ tabId: tab.id });
-  })().catch(async () => {
+    await panelPromise;
+  })().catch(async (error) => {
+    lastCaptureError = error?.message || String(error);
     await setActionState(false, true).catch(() => {});
-    await chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+    await panelPromise.catch(() => {});
   });
 });
 
@@ -122,6 +136,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         target: "offscreen",
         type: message.type
       });
+      if (message.type === "GET_STATUS") result.captureError = lastCaptureError;
       if (message.type === "STOP_TRANSLATION") await setActionState(false);
       if (message.type === "GET_STATUS") await setActionState(Boolean(result?.state?.active), Boolean(result?.state?.error));
       sendResponse(result);

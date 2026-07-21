@@ -174,7 +174,9 @@ async function refresh() {
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   preparedTabId = result?.preparedTabId || null;
   await renderPreflight(settings);
-  render(result?.state || { active: false, phase: "idle", error: result?.error || "" });
+  const nextState = result?.state || { active: false, phase: "idle", error: result?.error || "" };
+  if (!preparedTabId && activeCaptureKind === "media" && result?.captureError) nextState.error = result.captureError;
+  render(nextState);
 }
 
 async function listOutputs(settings) {
