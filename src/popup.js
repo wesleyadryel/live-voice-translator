@@ -1,5 +1,6 @@
 import { loadSettings, maskKey, saveSettings } from "./config.js";
 import { languageName, localizePage, t } from "./i18n.js";
+import { RealtimeTranslator } from "./realtime.js";
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -26,6 +27,7 @@ let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
 let actionError = "";
 let activeCaptureKind = "meeting";
+let localMediaSession = null;
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -79,6 +81,14 @@ const TAB_ACCESS_HINT = {
   fr: "Cliquez sur l’icône Live Voice Translator dans cet onglet, puis démarrez la traduction."
 };
 
+const MEDIA_TRANSLATION_MODE_HINT = {
+  en: "Choose Translation mode for video playback.",
+  ru: "Для видео выберите режим «Перевод».",
+  es: "Para el vídeo, elija el modo Traducir.",
+  de: "Wählen Sie für Videos den Modus Übersetzen.",
+  fr: "Pour la vidéo, choisissez le mode Traduire."
+};
+
 function renderCaptureContext(kind) {
   if (kind === "media") {
     Object.entries(MEDIA_LABELS[locale] || MEDIA_LABELS.en).forEach(([key, value]) => { routeLabels[key].textContent = value; });
@@ -88,6 +98,67 @@ function renderCaptureContext(kind) {
   routeLabels.target.textContent = t(locale, "participant");
   routeLabels.sourceSetting.textContent = t(locale, "youSpeak");
   routeLabels.targetSetting.textContent = t(locale, "participantLanguage");
+}
+
+function captureCurrentTabAudio() {
+  return new Promise((resolve, reject) => {
+    chrome.tabCapture.capture({ audio: true, video: false }, (stream) => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message));
+      else if (!stream) reject(new Error("Chrome did not provide audio from this tab."));
+      else resolve(stream);
+    });
+  });
+}
+
+async function startMediaTranslation(settings) {
+  const stream = await captureCurrentTabAudio();
+  const output = new Audio();
+  output.autoplay = true;
+  const startedAt = Date.now();
+  localMediaSession = { stream, output, translator: null, startedAt };
+  currentState = { active: true, phase: "connecting", error: "", startedAt, durationSeconds: 0, transcriptCount: 0 };
+  render(currentState);
+  try {
+    const translator = new RealtimeTranslator({
+      apiKey: settings.apiKey,
+      inputStream: stream,
+      outputElement: output,
+      from: settings.sourceLanguage,
+      to: settings.targetLanguage,
+      voice: settings.incomingVoice,
+      onState: (phase) => {
+        if (!localMediaSession) return;
+        currentState = { ...currentState, phase };
+        render(currentState);
+      },
+      onDisconnect: () => stopMediaTranslation({ error: t(locale, "network") })
+    });
+    localMediaSession.translator = translator;
+    await translator.connect();
+    currentState = { ...currentState, active: true, phase: "live" };
+    return { ok: true, state: currentState };
+  } catch (error) {
+    await stopMediaTranslation({ error: error.message, countUsage: false });
+    throw error;
+  }
+}
+
+async function stopMediaTranslation({ error = "", countUsage = true } = {}) {
+  const session = localMediaSession;
+  if (!session) return { ok: true, state: currentState };
+  localMediaSession = null;
+  session.translator?.close();
+  session.stream?.getTracks().forEach((track) => track.stop());
+  session.output.pause();
+  session.output.srcObject = null;
+  const durationSeconds = Math.max(0, Math.round((Date.now() - session.startedAt) / 1000));
+  if (countUsage && durationSeconds > 0) {
+    const latest = await loadSettings();
+    await saveSettings({ usageSeconds: Number(latest.usageSeconds || 0) + durationSeconds, sessionCount: Number(latest.sessionCount || 0) + 1 });
+  }
+  currentState = { active: false, phase: error ? "error" : "idle", error, startedAt: 0, durationSeconds, transcriptCount: 0 };
+  return { ok: true, state: currentState };
 }
 
 async function microphonePermission() {
@@ -159,8 +230,12 @@ async function refresh() {
   elements.setup.hidden = Boolean(settings.apiKey);
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
   await renderPreflight(settings);
-  const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
-  render(result?.state || { active: false, phase: "idle", error: result?.error || "" });
+  if (localMediaSession) {
+    render(currentState);
+  } else {
+    const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+    render(result?.state || { active: false, phase: "idle", error: result?.error || "" });
+  }
 }
 
 async function listOutputs(settings) {
@@ -187,12 +262,19 @@ elements.toggle.addEventListener("click", async () => {
   render();
   try {
     if (active) {
-      const result = await chrome.runtime.sendMessage({ type: "STOP_TRANSLATION" });
+      const result = localMediaSession ? await stopMediaTranslation() : await chrome.runtime.sendMessage({ type: "STOP_TRANSLATION" });
       if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
       currentState = result.state;
       if (result.meetingId) await chrome.tabs.create({ url: `${chrome.runtime.getURL("src/history.html")}#${result.meetingId}` });
     } else {
       if (!currentSettings.apiKey) { chrome.runtime.openOptionsPage(); return; }
+      if (activeCaptureKind === "media") {
+        if (currentMode !== "translation") throw new Error(MEDIA_TRANSLATION_MODE_HINT[locale] || MEDIA_TRANSLATION_MODE_HINT.en);
+        const result = await startMediaTranslation(currentSettings);
+        if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
+        currentState = result.state;
+        return;
+      }
       if (["notes", "both", "transcript"].includes(currentMode) && !currentSettings.recordingNoticeAccepted) {
         elements.notice.hidden = false;
         return;
