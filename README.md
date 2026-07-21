@@ -5,7 +5,8 @@
 <h1 align="center">Live Voice Translator</h1>
 
 <p align="center">
-  Open-source, two-way live voice translation for browser conferences.
+  Speak naturally across languages in browser meetings with real-time,
+  two-way AI voice translation.
 </p>
 
 <p align="center">
@@ -15,13 +16,22 @@
   <img src="https://img.shields.io/badge/OpenAI-Realtime_API-000000?style=for-the-badge&logo=openai&logoColor=white" alt="OpenAI Realtime API">
 </p>
 
-> If live multilingual meetings should be easier, please consider starring the repository. It helps other people discover the project.
+## What is Live Voice Translator?
 
-You speak Russian and the other participant hears English. They speak English
-and you hear Russian. Translation runs through the user's own OpenAI API key.
+Live Voice Translator is an open-source Chrome extension that helps people
+communicate across language barriers during online meetings. You speak in your
+language, the other participant hears a translated voice in theirs, and their
+reply is translated back for you in real time.
+
+It is designed for multilingual conversations in Google Meet, Zoom Web, and
+Yandex Telemost: international sales calls, customer interviews, remote-team
+meetings, product demos, support sessions, and everyday cross-language
+communication. Translation runs through the user's own OpenAI API key.
 
 The extension also supports meeting notes. Choose one of four modes before a
 call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
+
+> If live multilingual meetings should be easier, please consider starring the repository. It helps other people discover the project.
 
 ## Highlights
 
@@ -70,6 +80,34 @@ Version 0.9.2 is a browser-only release candidate for Chrome. It captures the co
 - Chrome 116 or newer
 - An OpenAI API account with Realtime API access
 - Headphones
+
+## Frequently asked questions
+
+### Can I use Live Voice Translator to talk to someone who speaks another language?
+
+Yes. The extension translates both sides of a browser-based conversation in
+real time: your speech for the other participant and their speech for you.
+
+### Which meeting platforms are supported?
+
+The current browser targets are Google Meet, Zoom Web, and Yandex Telemost.
+Native desktop meeting applications are not supported.
+
+### Does it create transcripts and meeting notes?
+
+Yes. It can display a live speaker-labelled transcript and create structured
+meeting notes with decisions, action items, deadlines, and open questions.
+
+### Is Live Voice Translator free and open source?
+
+The extension is open source under the MIT License. OpenAI API usage is billed
+separately to the owner of the API key.
+
+### Is meeting history uploaded to a project server?
+
+No. This project has no backend or analytics. Meeting history is stored locally
+in the browser, while speech processing is sent directly to OpenAI using the
+user's configured API key.
 
 ## macOS installer
 
