@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   audioProfile: "solo",
   sourceLanguage: "Russian",
   targetLanguage: "English",
+  mediaSourceLanguage: "English",
+  mediaTargetLanguage: "Russian",
   outgoingVoice: "marin",
   incomingVoice: "cedar",
   outgoingDeviceId: "default",

@@ -40,7 +40,7 @@ const SUMMARY_KEYS = ["overview", "topics", "decisions", "tasks", "deadlines", "
 function tr(settings, key, variables) { return t(settings.interfaceLanguage || "en", key, variables); }
 
 function freshState(overrides = {}) {
-  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, reconnectAttempt: 0, ...overrides };
+  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, translatedUtteranceCount: 0, reconnectAttempt: 0, ...overrides };
 }
 
 async function storageGet(defaults = {}) {
@@ -265,7 +265,11 @@ function translatorOptions(settings, mode, outgoing) {
     to: forwards ? settings.targetLanguage : settings.sourceLanguage,
     voice: outgoing ? settings.outgoingVoice : settings.incomingVoice,
     verbatim: !mode.audio,
-    onTranscript: (text) => addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant"),
+    manualChunkMs: mediaCapture ? 6000 : 0,
+    onTranscript: (text) => {
+      if (mode.audio && text) state.translatedUtteranceCount += 1;
+      addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant");
+    },
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
     onDisconnect: () => scheduleReconnect(settings, mode)
   };

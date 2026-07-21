@@ -2,7 +2,7 @@ const REALTIME_MODEL = "gpt-realtime-1.5";
 const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
 
 export class RealtimeTranslator {
-  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, verbatim = false }) {
+  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, verbatim = false, manualChunkMs = 0 }) {
     this.apiKey = apiKey;
     this.inputStream = inputStream;
     this.outputElement = outputElement;
@@ -14,11 +14,14 @@ export class RealtimeTranslator {
     this.onTranscript = onTranscript || (() => {});
     this.onDisconnect = onDisconnect || (() => {});
     this.verbatim = verbatim;
+    this.manualChunkMs = manualChunkMs;
     this.transcriptBuffer = "";
     this.pc = null;
     this.dataChannel = null;
     this.closedByUser = false;
     this.wasConnected = false;
+    this.responseInProgress = false;
+    this.chunkTimer = null;
   }
 
   async connect() {
@@ -54,6 +57,8 @@ export class RealtimeTranslator {
     dc.onmessage = (message) => {
       try {
         const event = JSON.parse(message.data);
+        if (event.type === "response.created") this.responseInProgress = true;
+        if (event.type === "response.done") this.responseInProgress = false;
         if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
           this.transcriptBuffer += event.delta || "";
         }
@@ -73,7 +78,7 @@ export class RealtimeTranslator {
           output_modalities: ["audio"],
           audio: {
             input: {
-              turn_detection: {
+              turn_detection: this.manualChunkMs ? null : {
                 type: "semantic_vad",
                 eagerness: "high",
                 create_response: true,
@@ -92,6 +97,13 @@ export class RealtimeTranslator {
               ].join(" ")
         }
       }));
+      if (this.manualChunkMs) {
+        this.chunkTimer = setInterval(() => {
+          if (this.dataChannel?.readyState !== "open" || this.responseInProgress) return;
+          this.dataChannel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+          this.dataChannel.send(JSON.stringify({ type: "response.create" }));
+        }, this.manualChunkMs);
+      }
     };
 
     const offer = await pc.createOffer();
@@ -113,6 +125,8 @@ export class RealtimeTranslator {
 
   close() {
     this.closedByUser = true;
+    clearInterval(this.chunkTimer);
+    this.chunkTimer = null;
     this.dataChannel?.close();
     this.pc?.close();
     this.pc = null;

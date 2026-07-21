@@ -55,6 +55,12 @@ function formatDuration(totalSeconds) {
 
 function languageLabel(value) { return languageName(locale, value); }
 
+function contextualLanguages(settings) {
+  return activeCaptureKind === "media"
+    ? { source: settings.mediaSourceLanguage || "English", target: settings.mediaTargetLanguage || "Russian" }
+    : { source: settings.sourceLanguage, target: settings.targetLanguage };
+}
+
 function captureKindFor(url = "") {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -86,6 +92,14 @@ const MEDIA_TRANSLATION_MODE_HINT = {
   es: "Para el vídeo, elija el modo Traducir.",
   de: "Wählen Sie für Videos den Modus Übersetzen.",
   fr: "Pour la vidéo, choisissez le mode Traduire."
+};
+
+const MEDIA_PROGRESS = {
+  en: { waiting: "Listening for the first phrase…", translated: (count) => `Translated phrases: ${count}` },
+  ru: { waiting: "Слушаю первую фразу…", translated: (count) => `Переведено фраз: ${count}` },
+  es: { waiting: "Escuchando la primera frase…", translated: (count) => `Frases traducidas: ${count}` },
+  de: { waiting: "Warte auf den ersten Satz…", translated: (count) => `Übersetzte Sätze: ${count}` },
+  fr: { waiting: "Écoute de la première phrase…", translated: (count) => `Phrases traduites : ${count}` }
 };
 
 function renderCaptureContext(kind) {
@@ -139,7 +153,12 @@ function render(state = currentState) {
   const error = state.error ? friendlyError(state.error) : actionError;
   elements.error.hidden = !error;
   elements.errorCopy.textContent = error;
-  elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
+  if (active && activeCaptureKind === "media") {
+    const progress = MEDIA_PROGRESS[locale] || MEDIA_PROGRESS.en;
+    elements.modeHelp.textContent = state.translatedUtteranceCount ? progress.translated(state.translatedUtteranceCount) : progress.waiting;
+  } else {
+    elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
+  }
   elements.notice.hidden = active || !["notes", "both", "transcript"].includes(currentMode) || Boolean(currentSettings.recordingNoticeAccepted);
   updateTimer();
 }
@@ -161,14 +180,15 @@ async function refresh() {
   renderCaptureContext(activeCaptureKind);
   document.title = t(locale, "appTitle");
   currentMode = settings.mode;
+  const languages = contextualLanguages(settings);
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === currentMode));
   elements.interfaceLanguage.value = locale;
-  elements.sourceLanguage.value = settings.sourceLanguage;
-  elements.targetLanguage.value = settings.targetLanguage;
+  elements.sourceLanguage.value = languages.source;
+  elements.targetLanguage.value = languages.target;
   elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured");
   elements.usage.textContent = t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 });
-  elements.source.textContent = languageLabel(settings.sourceLanguage);
-  elements.target.textContent = languageLabel(settings.targetLanguage);
+  elements.source.textContent = languageLabel(languages.source);
+  elements.target.textContent = languageLabel(languages.target);
   elements.setup.hidden = Boolean(settings.apiKey);
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
@@ -212,7 +232,14 @@ elements.toggle.addEventListener("click", async () => {
       if (activeCaptureKind === "media") {
         if (currentMode !== "translation") throw new Error(MEDIA_TRANSLATION_MODE_HINT[locale] || MEDIA_TRANSLATION_MODE_HINT.en);
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const result = await chrome.runtime.sendMessage({ type: "START_TRANSLATION", tabId: tab?.id, captureKind: "media" });
+        const languages = contextualLanguages(currentSettings);
+        const result = await chrome.runtime.sendMessage({
+          type: "START_TRANSLATION",
+          tabId: tab?.id,
+          captureKind: "media",
+          sourceLanguage: languages.source,
+          targetLanguage: languages.target
+        });
         if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
         currentState = result.state;
         return;
@@ -260,8 +287,16 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   await refresh();
 }));
 elements.interfaceLanguage.addEventListener("change", async () => { await saveSettings({ interfaceLanguage: elements.interfaceLanguage.value }); await refresh(); });
-elements.sourceLanguage.addEventListener("change", async () => { await saveSettings({ sourceLanguage: elements.sourceLanguage.value }); await refresh(); });
-elements.targetLanguage.addEventListener("change", async () => { await saveSettings({ targetLanguage: elements.targetLanguage.value }); await refresh(); });
+elements.sourceLanguage.addEventListener("change", async () => {
+  const key = activeCaptureKind === "media" ? "mediaSourceLanguage" : "sourceLanguage";
+  await saveSettings({ [key]: elements.sourceLanguage.value });
+  await refresh();
+});
+elements.targetLanguage.addEventListener("change", async () => {
+  const key = activeCaptureKind === "media" ? "mediaTargetLanguage" : "targetLanguage";
+  await saveSettings({ [key]: elements.targetLanguage.value });
+  await refresh();
+});
 for (const select of [elements.outgoingDevice, elements.incomingDevice]) select.addEventListener("change", async () => {
   const outgoingDeviceId = elements.outgoingDevice.value;
   await saveSettings({ outgoingDeviceId, incomingDeviceId: elements.incomingDevice.value, audioProfile: outgoingDeviceId === "default" ? "solo" : "conference" });

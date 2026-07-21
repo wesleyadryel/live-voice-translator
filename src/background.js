@@ -108,6 +108,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       await ensureOffscreenDocument();
       const settings = { ...(await chrome.storage.local.get()), captureKind: message.captureKind || "meeting", captureTabId: message.tabId };
+      if (settings.captureKind === "media") {
+        settings.sourceLanguage = message.sourceLanguage || settings.mediaSourceLanguage || "English";
+        settings.targetLanguage = message.targetLanguage || settings.mediaTargetLanguage || "Russian";
+      }
       const locale = settings.interfaceLanguage || "en";
       if (settings.captureKind !== "media" && ["translation", "both"].includes(settings.mode) && settings.audioProfile === "conference" && (!settings.outgoingDeviceId || settings.outgoingDeviceId === "default")) {
         throw new Error(t(locale, "conferenceCable"));
