@@ -86,4 +86,5 @@ over HTTPS/WSS to provide the requested feature.
 ## Required graphics
 
 - Icon: `assets/icon-128.png`
-- Screenshots: `screenshots/live.png`, `screenshots/history.png`, `screenshots/settings.png`
+- Store-ready screenshots: `store-assets/screenshots/live.jpg`,
+  `store-assets/screenshots/history.jpg`, `store-assets/screenshots/settings.jpg`
