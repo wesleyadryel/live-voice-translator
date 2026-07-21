@@ -34,6 +34,23 @@ call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
 - **No project backend or analytics** — connect directly with your own OpenAI API key
 - **Open source under MIT**
 
+## Product tour
+
+The screenshots below use fictional demo meetings and contain no real customer
+data or API credentials.
+
+### Live two-way translation
+
+![Live two-way translation during a browser meeting](screenshots/live.png)
+
+### Meeting notes and history
+
+![Structured meeting notes and searchable history](screenshots/history.png)
+
+### Translation settings
+
+![Language, voice, and connection settings](screenshots/settings.png)
+
 Clicking the extension icon opens a persistent Chrome side panel. Translation
 and note capture continue when the panel is closed or the user switches tabs.
 The extension badge shows `ON` while a session is active and `!` after an error.
