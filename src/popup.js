@@ -97,8 +97,9 @@ async function renderPreflight(settings) {
   const permission = await microphonePermission();
   setCheck("microphone", permission === "granted" ? "ok" : permission === "denied" ? "error" : "warn", permission === "granted" ? t(locale, "allowed") : permission === "denied" ? t(locale, "error") : t(locale, "connecting"));
   const voiceMode = ["translation", "both"].includes(settings.mode);
-  const conferenceReady = settings.audioProfile !== "conference" || (settings.outgoingDeviceId && settings.outgoingDeviceId !== "default" && settings.outgoingDeviceId !== settings.incomingDeviceId);
-  setCheck("route", !voiceMode || conferenceReady ? "ok" : "error", !voiceMode ? t(locale, "notRequired") : settings.audioProfile === "solo" ? "Mac" : conferenceReady ? t(locale, "ready") : t(locale, "required"));
+  const mediaCapture = activeCaptureKind === "media";
+  const conferenceReady = mediaCapture || settings.audioProfile !== "conference" || (settings.outgoingDeviceId && settings.outgoingDeviceId !== "default" && settings.outgoingDeviceId !== settings.incomingDeviceId);
+  setCheck("route", !voiceMode || conferenceReady ? "ok" : "error", !voiceMode || mediaCapture ? t(locale, "notRequired") : settings.audioProfile === "solo" ? "Mac" : conferenceReady ? t(locale, "ready") : t(locale, "required"));
 }
 
 function render(state = currentState) {
