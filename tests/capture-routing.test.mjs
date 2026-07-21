@@ -35,5 +35,7 @@ assert.match(popup, /Переведено фраз:/, "the panel must show that 
 assert.match(offscreen, /manualChunkMs: mediaCapture \? 6000 : 0/, "continuous video speech must be divided into bounded chunks");
 assert.match(realtime, /input_audio_buffer\.commit/, "manual video chunks must commit accumulated audio");
 assert.match(realtime, /type: "response\.create"/, "each committed video chunk must request a translation response");
+assert.match(offscreen, /reason === "user"[\s\S]*captureKind === "media"[\s\S]*tabStream\?\.active/, "manual media stop must retain a live authorized stream");
+assert.match(offscreen, /holdPreparedCapture\(reusableTabStream, activeSettings\.captureTabId\)/, "a stopped media session must be immediately ready to restart");
 
 console.log("capture routing regression test: OK");

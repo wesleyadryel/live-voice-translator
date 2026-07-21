@@ -187,13 +187,8 @@ async function releasePreparedCapture({ stopTracks = true } = {}) {
   await capture.context.close().catch(() => {});
 }
 
-async function prepareTabCapture(streamId, tabId) {
-  if (state.active) return { ok: true, active: true, preparedTabId: null };
+async function holdPreparedCapture(stream, tabId) {
   await releasePreparedCapture();
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
-    video: false
-  });
   const context = new AudioContext();
   const source = context.createMediaStreamSource(stream);
   source.connect(context.destination);
@@ -205,6 +200,17 @@ async function prepareTabCapture(streamId, tabId) {
       if (preparedCapture === capture) releasePreparedCapture({ stopTracks: false }).catch(() => {});
     };
   });
+  return capture;
+}
+
+async function prepareTabCapture(streamId, tabId) {
+  if (state.active) return { ok: true, active: true, preparedTabId: null };
+  await releasePreparedCapture();
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
+    video: false
+  });
+  const capture = await holdPreparedCapture(stream, tabId);
   return { ok: true, preparedTabId: tabId };
 }
 
@@ -224,6 +230,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const speakerAudio = await stopSpeakerRecording();
   const durationSeconds = capturedStartedAt ? Math.max(0, Math.round((Date.now() - capturedStartedAt) / 1000)) : 0;
   const hadActiveSession = state.active;
+  const reusableTabStream = reason === "user" && activeSettings.captureKind === "media" && tabStream?.active ? tabStream : null;
   generation += 1;
   reconnecting = false;
   clearLifecycleTimers();
@@ -231,11 +238,12 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   incomingTranslator?.close();
   outgoingTranslator?.close();
   microphoneStream?.getTracks().forEach((track) => track.stop());
-  tabStream?.getTracks().forEach((track) => track.stop());
+  if (!reusableTabStream) tabStream?.getTracks().forEach((track) => track.stop());
   incomingTranslator = outgoingTranslator = microphoneStream = tabStream = null;
   incomingOutput.srcObject = outgoingOutput.srcObject = outgoingMonitor.srcObject = null;
   meeting = null;
   sessionStartedAt = 0;
+  if (reusableTabStream) await holdPreparedCapture(reusableTabStream, activeSettings.captureTabId);
   state = freshState({ phase: capturedMeeting ? "summarizing" : "idle", durationSeconds, transcriptCount: state.transcriptCount });
   const completedMeeting = persist && capturedMeeting && MODES[capturedMeeting.mode]?.notes ? await saveMeeting(settings, capturedMeeting, speakerAudio) : null;
   if (hadActiveSession && durationSeconds > 0) {
