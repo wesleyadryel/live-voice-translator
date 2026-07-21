@@ -17,6 +17,7 @@ let currentSettings = {};
 let locale = "en";
 let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
+let actionError = "";
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -76,7 +77,7 @@ function render(state = currentState) {
   const iconPath = elements.toggle.querySelector(".button-symbol path");
   if (iconPath) iconPath.setAttribute("d", active ? "M8 8h8v8H8z" : "m9 7 8 5-8 5V7Z");
   elements.status.textContent = t(locale, PHASES[state.phase] || (active ? "live" : "ready"));
-  const error = state.error ? friendlyError(state.error) : "";
+  const error = state.error ? friendlyError(state.error) : actionError;
   elements.error.hidden = !error;
   elements.errorCopy.textContent = error;
   elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
@@ -132,6 +133,7 @@ async function listOutputs(settings) {
 elements.toggle.addEventListener("click", async () => {
   if (busy) return;
   busy = true;
+  actionError = "";
   elements.error.hidden = true;
   render();
   try {
@@ -147,12 +149,14 @@ elements.toggle.addEventListener("click", async () => {
         return;
       }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab || !/^https?:/i.test(tab.url || "")) throw new Error(t(locale, "conferenceTab"));
       const result = await chrome.runtime.sendMessage({ type: "START_TRANSLATION", tabId: tab.id });
       if (!result?.ok) throw new Error(result?.error || t(locale, "error"));
       currentState = result.state;
     }
   } catch (error) {
-    currentState = { active: false, phase: "error", error: friendlyError(error) };
+    actionError = friendlyError(error);
+    currentState = { active: false, phase: "error", error: actionError };
   } finally {
     busy = false;
     render(currentState);
