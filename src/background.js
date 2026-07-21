@@ -2,7 +2,13 @@ import { t } from "./i18n.js";
 
 let offscreenCreating;
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// The action click grants activeTab, then opens a panel for that exact tab.
+// Chrome's automatic panel toggle skips the action event, so tab capture can
+// otherwise be rejected as "extension has not been invoked".
+chrome.action.onClicked.addListener((tab) => {
+  if (!tab.id) return;
+  chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+});
 
 async function currentLocale() {
   const { interfaceLanguage = "en" } = await chrome.storage.local.get({ interfaceLanguage: "en" });

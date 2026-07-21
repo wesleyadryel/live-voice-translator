@@ -37,6 +37,7 @@ function friendlyError(error) {
   if (/OpenAI 401|invalid.*key|Incorrect API key/i.test(message)) return t(locale, "keyError");
   if (/OpenAI 429|quota|rate limit/i.test(message)) return t(locale, "quota");
   if (/Requested device not found|NotFoundError/i.test(message)) return t(locale, "deviceMissing");
+  if (/Extension has not been invoked|activeTab permission/i.test(message)) return TAB_ACCESS_HINT[locale] || TAB_ACCESS_HINT.en;
   if (/Cannot capture|tabCapture|active tab/i.test(message)) return t(locale, "conferenceTab");
   if (/virtual|аудиокабель|different devices|Conference mode/i.test(message)) return message.includes("different") || message.includes("разными") ? t(locale, "differentOutputs") : t(locale, "conferenceCable");
   if (/network|fetch|connection/i.test(message)) return t(locale, "network");
@@ -68,6 +69,14 @@ const MEDIA_LABELS = {
   es: { source: "Vídeo", target: "Usted", sourceSetting: "Idioma del vídeo", targetSetting: "Traducir a" },
   de: { source: "Video", target: "Sie", sourceSetting: "Videosprache", targetSetting: "Übersetzen in" },
   fr: { source: "Vidéo", target: "Vous", sourceSetting: "Langue de la vidéo", targetSetting: "Traduire vers" }
+};
+
+const TAB_ACCESS_HINT = {
+  en: "Click the Live Voice Translator icon once on this tab, then start translation.",
+  ru: "Нажмите иконку Live Voice Translator на этой вкладке, затем запустите перевод.",
+  es: "Haga clic en el icono de Live Voice Translator en esta pestaña y luego inicie la traducción.",
+  de: "Klicken Sie auf dieser Registerkarte auf das Symbol von Live Voice Translator und starten Sie dann die Übersetzung.",
+  fr: "Cliquez sur l’icône Live Voice Translator dans cet onglet, puis démarrez la traduction."
 };
 
 function renderCaptureContext(kind) {
