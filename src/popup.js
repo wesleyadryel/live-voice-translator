@@ -183,7 +183,7 @@ function render(state = currentState) {
   } else {
     elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
   }
-  elements.notice.hidden = active || !["notes", "both", "transcript"].includes(currentMode) || Boolean(currentSettings.recordingNoticeAccepted);
+  elements.notice.hidden = active || Boolean(currentSettings.recordingNoticeAccepted);
   renderTranscript();
   updateTimer();
 }
@@ -317,7 +317,7 @@ elements.toggle.addEventListener("click", async () => {
         currentState = result.state;
         return;
       }
-      if (["notes", "both", "transcript"].includes(currentMode) && !currentSettings.recordingNoticeAccepted) {
+      if (!currentSettings.recordingNoticeAccepted) {
         elements.notice.hidden = false;
         return;
       }
