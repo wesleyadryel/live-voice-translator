@@ -16,7 +16,7 @@ node --test tests/*.test.mjs
 
 ## Good first contributions
 
-- Verify compatibility with new versions of Google Meet, Zoom Web, Yandex Telemost, or Telegram Web.
+- Verify compatibility with new versions of Google Meet, Zoom Web, Yandex Telemost, Telegram Web, or Discord Web.
 - Improve translations and accessibility.
 - Add regression tests for browser audio routing.
 - Improve installation documentation for macOS, Windows, or Linux.

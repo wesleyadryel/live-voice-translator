@@ -10,7 +10,7 @@ const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURI
 function isSupportedConferenceUrl(url = "") {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com" || host === "web.telegram.org";
+    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com" || host === "web.telegram.org" || host === "discord.com" || host.endsWith(".discord.com");
   } catch {
     return false;
   }
@@ -60,6 +60,19 @@ chrome.action.onClicked.addListener((tab) => {
     await panelPromise.catch(() => {});
   });
 });
+
+// A session that ended for any reason leaves no prepared capture behind, and the
+// toolbar click that originally authorised it is long gone. activeTab stays granted
+// until the tab navigates, so a fresh stream can usually be obtained right here —
+// which is what keeps a restart from requiring the panel to be reopened.
+async function ensurePreparedCapture(tabId) {
+  if (!tabId) return;
+  const status = await chrome.runtime.sendMessage({ target: "offscreen", type: "GET_STATUS" });
+  if (status?.preparedTabId === tabId || status?.state?.active) return;
+  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  const prepared = await chrome.runtime.sendMessage({ target: "offscreen", type: "PREPARE_TAB_CAPTURE", streamId, tabId });
+  if (!prepared?.ok) throw new Error(prepared?.error || "TAB_CAPTURE_NOT_PREPARED");
+}
 
 async function currentLocale() {
   const { interfaceLanguage = "en" } = await chrome.storage.local.get({ interfaceLanguage: "en" });
@@ -157,6 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "START_TRANSLATION") {
     (async () => {
       await ensureOffscreenDocument();
+      await ensurePreparedCapture(message.tabId);
       const settings = { ...(await chrome.storage.local.get()), captureKind: message.captureKind || "meeting", captureTabId: message.tabId };
       if (settings.captureKind === "media") {
         settings.sourceLanguage = message.sourceLanguage || settings.mediaSourceLanguage || "English";

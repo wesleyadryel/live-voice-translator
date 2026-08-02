@@ -18,17 +18,18 @@
     "https://*.zoom.us/*",
     "https://telemost.yandex.ru/*",
     "https://telemost.yandex.com/*",
-    "https://web.telegram.org/*"
+    "https://web.telegram.org/*",
+    "https://*.discord.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*"],
+      "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*", "https://*.discord.com/*"],
       "js": ["src/conference-main.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*"],
+      "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*", "https://*.discord.com/*"],
       "js": ["src/conference-content.js"],
       "run_at": "document_start",
       "world": "ISOLATED"
@@ -37,7 +38,7 @@
   "web_accessible_resources": [
     {
       "resources": ["src/conference-content-module.js", "src/realtime.js"],
-      "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*"]
+      "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*", "https://*.discord.com/*"]
     }
   ],
   "background": {

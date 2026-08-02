@@ -312,7 +312,10 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const speakerAudio = await stopSpeakerRecording();
   const durationSeconds = capturedStartedAt ? Math.max(0, Math.round((Date.now() - capturedStartedAt) / 1000)) : 0;
   const hadActiveSession = state.active;
-  const reusableTabStream = reason === "user" && activeSettings.captureKind === "media" && tabStream?.active ? tabStream : null;
+  // Tab capture can only be authorised from a toolbar click, so a still-live stream
+  // is kept for the next start instead of being thrown away. This applies to every
+  // capture kind: a meeting that was stopped is the most likely one to be restarted.
+  const reusableTabStream = reason !== "tab_closed" && tabStream?.active ? tabStream : null;
   generation += 1;
   reconnecting = false;
   await releasePassthroughs();

@@ -23,7 +23,7 @@ meetings. Live Voice Translator translates both sides of the conversation in
 real time: you speak in your language, the other participant hears a translated
 voice, and their reply is translated back for you.
 
-Designed for multilingual calls in Google Meet, Zoom Web, Yandex Telemost, and Telegram Web.
+Designed for multilingual calls in Google Meet, Zoom Web, Yandex Telemost, Telegram Web, and Discord Web.
 Use it for international sales calls, customer interviews, remote-team
 meetings, product demonstrations, support sessions, and everyday
 cross-language communication.

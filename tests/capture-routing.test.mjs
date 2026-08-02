@@ -20,8 +20,16 @@ assert.ok(panelOpen > actionStart && panelOpen < firstAwait, "the panel must ope
 assert.ok(captureAuthorization < firstAwait, "tab capture must be requested before the first async boundary");
 assert.ok(preparedMessage > captureAuthorization, "the stream ID must be consumed immediately by the offscreen document");
 
+// Start may re-authorize, but only as a fallback: activeTab survives until the tab
+// navigates, so a restart after a stop should not force the user back to the toolbar.
+// It must still check for an existing prepared stream first, and must never replace
+// the authorization done inside the toolbar action above.
+assert.match(background, /async function ensurePreparedCapture/, "a restart must be able to re-prepare the capture on its own");
+assert.match(background, /if \(status\?\.preparedTabId === tabId \|\| status\?\.state\?\.active\) return;/, "re-authorization must be skipped when a usable capture already exists");
+const ensureBody = background.slice(background.indexOf("async function ensurePreparedCapture"));
+assert.ok(ensureBody.indexOf("preparedTabId === tabId") < ensureBody.indexOf("getMediaStreamId"), "the existing capture must be checked before requesting a new stream");
 const startHandler = background.slice(background.indexOf('message.type === "START_TRANSLATION"'));
-assert.equal(startHandler.includes("chrome.tabCapture.getMediaStreamId"), false, "Start must not request a new stream after the action event expires");
+assert.match(startHandler, /await ensurePreparedCapture\(message\.tabId\)/, "starting must guarantee a prepared capture instead of failing with a hint");
 assert.match(offscreen, /prepareTabCapture\(streamId, tabId\)/, "offscreen must consume and retain the authorized stream");
 assert.match(offscreen, /takePreparedCapture\(settings\.captureTabId\)/, "translation must use the prepared stream");
 assert.equal(popup.includes("chrome.tabCapture.capture"), false, "the side panel must not attempt foreground tab capture");
@@ -35,7 +43,10 @@ assert.match(popup, /Переведено фраз:/, "the panel must show that 
 assert.match(offscreen, /manualChunkMs: mediaCapture \? 6000 : 0/, "continuous video speech must be divided into bounded chunks");
 assert.match(realtime, /input_audio_buffer\.commit/, "manual video chunks must commit accumulated audio");
 assert.match(realtime, /type: "response\.create"/, "each committed video chunk must request a translation response");
-assert.match(offscreen, /reason === "user"[\s\S]*captureKind === "media"[\s\S]*tabStream\?\.active/, "manual media stop must retain a live authorized stream");
-assert.match(offscreen, /holdPreparedCapture\(reusableTabStream, activeSettings\.captureTabId\)/, "a stopped media session must be immediately ready to restart");
+// Retaining the stream is what makes a restart instant; limiting it to media tabs
+// was why stopping a meeting used to demand a trip back to the toolbar icon.
+assert.match(offscreen, /reason !== "tab_closed" && tabStream\?\.active \? tabStream : null/, "any stop but a closed tab must retain the live authorized stream");
+assert.equal(/reusableTabStream[\s\S]{0,120}captureKind === "media"/.test(offscreen), false, "stream reuse must not be restricted to media tabs");
+assert.match(offscreen, /holdPreparedCapture\(reusableTabStream, activeSettings\.captureTabId\)/, "a stopped session must be immediately ready to restart");
 
 console.log("capture routing regression test: OK");

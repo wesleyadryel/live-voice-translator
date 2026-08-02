@@ -9,11 +9,26 @@ const background = await readFile(new URL("../src/background.js", import.meta.ur
 const offscreen = await readFile(new URL("../src/offscreen.js", import.meta.url), "utf8");
 
 const matches = manifest.content_scripts.flatMap((entry) => entry.matches);
-for (const pattern of ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://web.telegram.org/*"]) {
+for (const pattern of ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://web.telegram.org/*", "https://*.discord.com/*"]) {
   assert.ok(matches.includes(pattern), `conference adapter must load on ${pattern}`);
   assert.ok(manifest.host_permissions.includes(pattern) || manifest.host_permissions.some((host) => host === pattern), `host permission missing for ${pattern}`);
 }
 assert.ok(manifest.content_scripts.some((entry) => entry.world === "MAIN" && entry.run_at === "document_start"), "WebRTC hook must run in the page's main world before conference scripts");
+
+// The host check gates outgoing voice routing, so a look-alike domain must never pass.
+const isSupportedConferenceUrl = new Function(`${background.match(/function isSupportedConferenceUrl[\s\S]*?\n\}/)[0]}\nreturn isSupportedConferenceUrl;`)();
+for (const url of [
+  "https://discord.com/channels/@me",
+  "https://canary.discord.com/channels/1/2",
+  "https://web.telegram.org/k/",
+  "https://meet.google.com/abc-defg-hij",
+  "https://acme.zoom.us/wc/join/123"
+]) {
+  assert.ok(isSupportedConferenceUrl(url), `${url} must be treated as a conference tab`);
+}
+for (const url of ["https://notdiscord.com/app", "https://discord.com.attacker.example/app", "https://example.com", "not a url"]) {
+  assert.equal(isSupportedConferenceUrl(url), false, `${url} must not be treated as a conference tab`);
+}
 assert.match(background, /Authorization: `Bearer \$\{apiKey\}`/, "only the service worker may attach the OpenAI API key");
 assert.equal(contentSource.includes("apiKey"), false, "the page-side translator must never receive the API key");
 assert.match(offscreen, /!settings\.webRtcOutgoing/, "offscreen must not create a second outgoing microphone translator");

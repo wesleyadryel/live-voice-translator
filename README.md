@@ -24,7 +24,7 @@ language, the other participant hears a translated voice in theirs, and their
 reply is translated back for you in real time.
 
 It is designed for multilingual conversations in Google Meet, Zoom Web, Yandex
-Telemost, and Telegram Web: international sales calls, customer interviews, remote-team
+Telemost, Telegram Web, and Discord Web: international sales calls, customer interviews, remote-team
 meetings, product demos, support sessions, and everyday cross-language
 communication. Translation runs through the user's own OpenAI API key.
 

@@ -82,7 +82,7 @@ function captureKindFor(url = "") {
 function isSupportedConferenceUrl(url = "") {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com" || host === "web.telegram.org";
+    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com" || host === "web.telegram.org" || host === "discord.com" || host.endsWith(".discord.com");
   } catch {
     return false;
   }
