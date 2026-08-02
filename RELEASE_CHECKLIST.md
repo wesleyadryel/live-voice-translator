@@ -4,6 +4,7 @@
 - [ ] Test a two-person browser call and confirm that only translated speech reaches the participant.
 - [ ] Confirm WebRTC microphone replacement in Meet, Zoom Web, Yandex Telemost, and Telegram Web individually.
 - [ ] Confirm all six controls, before and during a call: muting a translation sends or plays the untranslated voice instead, muting a whole direction leaves it silent, and both recover without a reconnect while the transcript keeps filling.
+- [ ] Confirm expressive delivery: whisper, then speak loudly, then ask a question — the translated voice should follow the loudness, pace, and intonation instead of reading everything flat.
 - [ ] Confirm the Original toggle: both voices are audible together on the incoming side, and the participant hears the mixed original plus translation on the outgoing side.
 - [ ] Confirm switching an interpreter off closes that direction's realtime session (no further API usage), plays or sends the untranslated voice, pauses only that side's transcript, and reconnects on demand.
 - [ ] Confirm that stopping, closing, and reloading restore the original microphone track.

@@ -441,7 +441,10 @@ async function start(suppliedSettings = {}) {
   state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
     if (settings.captureKind !== "media" && !settings.webRtcOutgoing) {
-      microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      // Gain control hides the delivery the interpreter is asked to mirror, and
+      // noise suppression gates quiet speech away once that boost is gone. Echo
+      // cancellation stays on to keep the translated output out of the microphone.
+      microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
     }
     tabStream = await takePreparedCapture(settings.captureTabId);
     if (mode.notes && settings.speakerDiarization) startSpeakerRecording(tabStream);

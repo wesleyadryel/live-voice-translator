@@ -35,7 +35,8 @@ call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
 
 ## Highlights
 
-- **Two-way voice translation** during live browser meetings
+- **Two-way voice translation** during live browser meetings, delivered with the
+  speaker's own loudness, pace, emphasis, and emotion rather than a flat read
 - **Translated outgoing microphone** for supported WebRTC conferences
 - **Live speaker-labelled transcript** in a persistent Chrome side panel
 - **Per-direction controls**, usable before and during a call: switch off an

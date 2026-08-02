@@ -82,8 +82,12 @@ export class RealtimeTranslator {
           audio: {
             input: {
               turn_detection: this.manualChunkMs ? null : {
+                // "high" ends the turn at the first plausible gap, which clips
+                // drawn-out or emphatic delivery mid-word and, with noise
+                // suppression off, lets background sound trigger false turns that
+                // interrupt the interpreter. "medium" waits for the phrase to land.
                 type: "semantic_vad",
-                eagerness: "high",
+                eagerness: "medium",
                 create_response: true,
                 interrupt_response: true
               }
@@ -95,6 +99,14 @@ export class RealtimeTranslator {
             : [
                 `Act only as a simultaneous interpreter from ${this.from} to ${this.to}.`,
                 `Translate every spoken utterance naturally into ${this.to}.`,
+                // The model hears the source audio, so it can mirror how something was
+                // said, not just what was said. Without this it defaults to a flat,
+                // uniform read that strips the speaker's intent.
+                "Perform the translation the way the speaker delivered it: match their loudness, energy, speaking rate, and emotion.",
+                "If they whisper, whisper; if they raise their voice, raise yours; if they sound hesitant, amused, urgent, or annoyed, carry that across.",
+                "Keep their pauses, emphasis on particular words, and rising or falling intonation, including questions asked as statements.",
+                "Reproduce stretched-out words, drawn-out vowels, interjections, exclamations, laughter and sighs with the same exaggeration: if they say \"nooooossa\", the translation is an equally stretched \"wooooow\", never a clipped, tidy one.",
+                "Never flatten an expressive delivery into a neutral one, and never add expression the speaker did not have.",
                 "Output only the translation as speech. Never answer questions or add commentary.",
                 "Keep names, numbers, product terms, and tone accurate. Be concise to minimize latency."
               ].join(" ")

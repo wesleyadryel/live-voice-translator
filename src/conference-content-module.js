@@ -119,7 +119,12 @@ async function startOutgoing(settings) {
   dispatch("live-voice:activate");
   try {
     microphoneStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      // Gain control levels every utterance to the same loudness and noise
+      // suppression gates the quiet parts away — together they hide how a sentence
+      // was actually spoken, and gate out real speech once the signal is no longer
+      // boosted. Echo cancellation stays on: without it the translated voice coming
+      // out of the speakers is picked back up and fed to the interpreter.
+      audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false }
     });
     publishOriginalTrack(microphoneStream);
     applyOutgoingMode();

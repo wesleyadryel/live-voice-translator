@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import { t } from "../src/i18n.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [popup, popupJs, offscreenJs, contentModuleJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
+const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
   read("../src/popup.html"),
   read("../src/popup.js"),
   read("../src/offscreen.js"),
   read("../src/conference-content-module.js"),
+  read("../src/realtime.js"),
   read("../src/options.html"),
   read("../src/history.html"),
   read("../src/release.css"),
@@ -44,6 +45,14 @@ for (const id of ["mute-outgoing-interpreter", "mute-outgoing-translation", "add
   assert.match(popup, new RegExp(`id="${id}"`), `the main panel must expose the ${id} control`);
 }
 assert.match(popupJs, /aria-pressed/, "mute controls must announce their state accessibly");
+assert.match(realtimeJs, /match their loudness, energy, speaking rate, and emotion/, "the interpreter must mirror how something was said, not only what was said");
+assert.match(realtimeJs, /drawn-out vowels, interjections, exclamations/, "stretched, emphatic delivery must survive translation instead of being tidied up");
+assert.equal(realtimeJs.includes('eagerness: "high"'), false, "an eager turn detector clips drawn-out delivery and fires on background noise");
+for (const source of [offscreenJs, contentModuleJs]) {
+  assert.match(source, /autoGainControl: false/, "automatic gain control would flatten the delivery the interpreter is asked to mirror");
+  assert.match(source, /noiseSuppression: false/, "noise suppression gates quiet speech away once the gain boost is gone");
+  assert.match(source, /echoCancellation: true/, "echo cancellation must stay on or the translated voice re-enters the microphone");
+}
 assert.match(offscreenJs, /incomingOutput\.muted = !incomingTranslationAudible/, "the translated voice you hear must follow its own mute");
 assert.match(offscreenJs, /setPassthrough\("outgoing", audioEnabled && !outgoingMuted && \(outgoingOriginalOn \|\| !outgoingTranslationAudible\)/, "your original voice must be sent on request, and whenever the translation is not being sent");
 assert.match(offscreenJs, /setPassthrough\("incoming", !incomingMuted && \(incomingOriginalOn \|\| !incomingTranslationAudible\)/, "the original voice must play on request, and whenever the translation is not playing");
