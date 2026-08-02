@@ -23,8 +23,8 @@ communicate across language barriers during online meetings. You speak in your
 language, the other participant hears a translated voice in theirs, and their
 reply is translated back for you in real time.
 
-It is designed for multilingual conversations in Google Meet, Zoom Web, and
-Yandex Telemost: international sales calls, customer interviews, remote-team
+It is designed for multilingual conversations in Google Meet, Zoom Web, Yandex
+Telemost, and Telegram Web: international sales calls, customer interviews, remote-team
 meetings, product demos, support sessions, and everyday cross-language
 communication. Translation runs through the user's own OpenAI API key.
 
@@ -38,8 +38,13 @@ call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
 - **Two-way voice translation** during live browser meetings
 - **Translated outgoing microphone** for supported WebRTC conferences
 - **Live speaker-labelled transcript** in a persistent Chrome side panel
+- **Per-direction controls**, usable before and during a call: switch off an
+  interpreter to stop sending that side's audio to the API entirely, mute a
+  translation to fall back to the untranslated voice, add the original voice to hear
+  or send both at once, or mute a whole direction for real silence. Only switching an
+  interpreter off pauses that side's transcript
 - **Structured meeting notes** with decisions, tasks, deadlines, and open questions
-- **Five interface languages**: English, Russian, Spanish, German, and French
+- **Six interface languages**: English, Russian, Spanish, German, French, and Brazilian Portuguese
 - **Local-first history** with configurable retention and Markdown export
 - **No project backend or analytics** — connect directly with your own OpenAI API key
 - **Open source under MIT**

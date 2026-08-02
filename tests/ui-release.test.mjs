@@ -3,10 +3,11 @@ import { readFile } from "node:fs/promises";
 import { t } from "../src/i18n.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [popup, popupJs, offscreenJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
+const [popup, popupJs, offscreenJs, contentModuleJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
   read("../src/popup.html"),
   read("../src/popup.js"),
   read("../src/offscreen.js"),
+  read("../src/conference-content-module.js"),
   read("../src/options.html"),
   read("../src/history.html"),
   read("../src/release.css"),
@@ -18,7 +19,15 @@ const [popup, popupJs, offscreenJs, options, history, releaseCss, optionsCss, hi
 const allHtml = `${popup}\n${options}\n${history}`;
 const translationKeys = [...allHtml.matchAll(/data-i18n(?:-aria|-title|-placeholder)?="([^"]+)"/g)].map((match) => match[1]);
 for (const key of new Set(translationKeys)) assert.notEqual(t("en", key), key, `English translation is missing for ${key}`);
-for (const language of ["en", "ru", "es", "de", "fr"]) {
+for (const language of ["en", "ru", "es", "de", "fr", "pt-BR"]) {
+  // Button captions can legitimately be identical across languages ("Original"),
+  // but the descriptive titles must be genuinely translated.
+  const captions = ["muteAll", "original", "interpreter"];
+  const titles = ["muteOutgoingInterpreter", "unmuteOutgoingInterpreter", "muteIncomingInterpreter", "unmuteIncomingInterpreter", "muteOutgoingTranslation", "unmuteOutgoingTranslation", "muteOutgoing", "unmuteOutgoing", "muteIncomingTranslation", "unmuteIncomingTranslation", "muteIncoming", "unmuteIncoming", "addOutgoingOriginal", "removeOutgoingOriginal", "addIncomingOriginal", "removeIncomingOriginal"];
+  for (const key of [...captions, ...titles]) assert.notEqual(t(language, key), key, `${language}.${key} is missing`);
+  for (const key of titles) {
+    if (language !== "en") assert.notEqual(t(language, key), t("en", key), `${language}.${key} still falls back to English`);
+  }
   for (const hint of ["translationHint", "notesHint", "bothHint", "transcriptHint"]) {
     assert.ok(t(language, hint).length > 100, `${language}.${hint} must explain both live behavior and the final result`);
   }
@@ -31,6 +40,20 @@ assert.match(popup, /aria-live="polite"/, "new transcript lines must be announce
 for (const page of [popup, options, history]) {
   assert.match(page, /class="(?:app-icon|brand-mark)" src="\.\.\/assets\/icon-128\.png"/, "every extension surface must use the release app icon");
 }
+for (const id of ["mute-outgoing-interpreter", "mute-outgoing-translation", "add-outgoing-original", "mute-outgoing", "mute-incoming-interpreter", "mute-incoming-translation", "add-incoming-original", "mute-incoming"]) {
+  assert.match(popup, new RegExp(`id="${id}"`), `the main panel must expose the ${id} control`);
+}
+assert.match(popupJs, /aria-pressed/, "mute controls must announce their state accessibly");
+assert.match(offscreenJs, /incomingOutput\.muted = !incomingTranslationAudible/, "the translated voice you hear must follow its own mute");
+assert.match(offscreenJs, /setPassthrough\("outgoing", audioEnabled && !outgoingMuted && \(outgoingOriginalOn \|\| !outgoingTranslationAudible\)/, "your original voice must be sent on request, and whenever the translation is not being sent");
+assert.match(offscreenJs, /setPassthrough\("incoming", !incomingMuted && \(incomingOriginalOn \|\| !incomingTranslationAudible\)/, "the original voice must play on request, and whenever the translation is not playing");
+assert.match(releaseCss, /\.add-button\[aria-pressed="true"\]/, "an add-style toggle must not read as a mute warning when enabled");
+assert.match(offscreenJs, /incomingTranslator\?\.close\(\);\s*\n\s*incomingTranslator = null;/, "switching the interpreter off must close its realtime session so no tokens are spent");
+assert.match(offscreenJs, /incomingTranslator = incomingInterpreterOff \? null :/, "a reconnect must not revive an interpreter the user switched off");
+assert.match(contentModuleJs, /if \(interpreterOff\) return \{ ok: true \};/, "starting with the outgoing interpreter off must not open a realtime session");
+assert.equal(/(outgoing|incoming)Muted\)\s*(return|stop\()/.test(offscreenJs), false, "mute must never stop the session or the transcript");
+assert.match(popupJs, /saveSettings\(\{ \[key\]: mutes\[key\] \}\)/, "a mute chosen before starting must persist into the session");
+assert.match(popupJs, /button\.disabled = busy \|\| Boolean\(overrides\[key\]\)/, "a narrower control must be inert once a broader one already covers it");
 assert.match(popupJs, /renderTranscript\(\)/, "status refreshes must render new transcript lines");
 assert.match(offscreenJs, /liveTranscript\.slice\(-16\)/, "status must return a bounded transcript window");
 assert.match(offscreenJs, /if \(meeting\) meeting\.transcript\.push\(item\)/, "only note-enabled meetings may persist live transcript items");

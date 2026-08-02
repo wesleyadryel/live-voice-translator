@@ -8,8 +8,17 @@
   const originalTracks = new Map();
   let active = false;
   let replacementTrack = null;
+  let translatedTrack = null;
+  let originalMicTrack = null;
+  // translated: the participant hears the interpreter.
+  // original: the participant hears the untranslated voice from this page's own mic.
+  // both: the participant hears the original voice and the interpreter together.
+  // silence: the participant hears nothing at all.
+  let outgoingMode = "translated";
   let silenceContext = null;
   let silenceTrack = null;
+  let mixContext = null;
+  let mixTrack = null;
 
   function report(status, detail = "") {
     window.dispatchEvent(new CustomEvent("live-voice:route-status", { detail: { status, detail } }));
@@ -26,12 +35,12 @@
     return true;
   }
 
-  async function applyReplacement(track) {
+  async function applyReplacement(track, status = "routed") {
     replacementTrack = track;
     const senders = [...peerConnections].flatMap((pc) => pc.getSenders?.() || []).filter((sender) => sender.track?.kind === "audio" || originalTracks.has(sender));
     const results = await Promise.allSettled(senders.map((sender) => replaceSender(sender, track)));
     const replaced = results.filter((result) => result.status === "fulfilled" && result.value).length;
-    report(replaced ? "routed" : "waiting-for-sender", String(replaced));
+    report(replaced ? status : "waiting-for-sender", String(replaced));
     return replaced;
   }
 
@@ -49,28 +58,114 @@
     return silenceTrack;
   }
 
+  function releaseMix() {
+    mixTrack?.stop();
+    mixTrack = null;
+    mixContext?.close().catch(() => {});
+    mixContext = null;
+  }
+
+  // A sender carries a single track, so hearing both voices means mixing them into
+  // one. Rebuilt on demand: it only changes when the user flips the control.
+  function buildMixTrack(tracks) {
+    releaseMix();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    mixContext = new AudioContextClass();
+    const destination = mixContext.createMediaStreamDestination();
+    for (const track of tracks) {
+      mixContext.createMediaStreamSource(new MediaStream([track])).connect(destination);
+    }
+    mixContext.resume?.().catch(() => {});
+    mixTrack = destination.stream.getAudioTracks()[0];
+    return mixTrack;
+  }
+
+  // Fallback for sending the untranslated voice: hand the page's own microphone
+  // track back. Conference apps often disable or end that track once it has been
+  // replaced, so re-enable it and treat a dead one as unusable.
+  async function applyOriginalTracks() {
+    replacementTrack = null;
+    const restores = [];
+    for (const [sender, track] of originalTracks) {
+      if (track.readyState !== "live") continue;
+      track.enabled = true;
+      restores.push(sender.replaceTrack(track));
+    }
+    await Promise.allSettled(restores);
+    report(restores.length ? "original" : "waiting-for-sender", String(restores.length));
+  }
+
+  function liveOriginalTrack() {
+    if (originalMicTrack?.readyState !== "live") return null;
+    originalMicTrack.enabled = true;
+    return originalMicTrack;
+  }
+
+  async function applyOutgoingMode() {
+    if (!active) return;
+    if (outgoingMode === "silence") return applyReplacement(ensureSilenceTrack());
+    if (outgoingMode === "both") {
+      const tracks = [liveOriginalTrack(), translatedTrack?.readyState === "live" ? translatedTrack : null].filter(Boolean);
+      if (tracks.length > 1) return applyReplacement(buildMixTrack(tracks), "both");
+      // Only one voice is available yet; send it alone rather than nothing.
+      if (tracks.length === 1) return applyReplacement(tracks[0], tracks[0] === translatedTrack ? "routed" : "original");
+      return applyReplacement(ensureSilenceTrack());
+    }
+    if (outgoingMode === "original") {
+      // Prefer the extension's own live capture: it is known good, because the
+      // interpreter is listening through it right now.
+      const original = liveOriginalTrack();
+      if (original) return applyReplacement(original, "original");
+      return applyOriginalTracks();
+    }
+    if (!translatedTrack) return applyReplacement(ensureSilenceTrack());
+    return applyReplacement(translatedTrack);
+  }
+
+  async function setOutgoingMode(mode) {
+    outgoingMode = ["translated", "original", "both", "silence"].includes(mode) ? mode : "translated";
+    await applyOutgoingMode();
+  }
+
   async function activate() {
     active = true;
+    translatedTrack = null;
+    originalMicTrack = null;
     report("activating");
-    await applyReplacement(ensureSilenceTrack());
+    await applyOutgoingMode();
+  }
+
+  function trackFromElement(elementId) {
+    return document.getElementById(elementId)?.srcObject?.getAudioTracks?.()[0] || null;
   }
 
   async function useTranslatedTrack(elementId) {
-    const element = document.getElementById(elementId);
-    const track = element?.srcObject?.getAudioTracks?.()[0];
+    const track = trackFromElement(elementId);
     if (!track) throw new Error("TRANSLATED_AUDIO_TRACK_MISSING");
-    await applyReplacement(track);
+    translatedTrack = track;
+    await applyOutgoingMode();
+  }
+
+  async function useOriginalTrack(elementId) {
+    const track = trackFromElement(elementId);
+    if (!track) throw new Error("ORIGINAL_AUDIO_TRACK_MISSING");
+    originalMicTrack = track;
+    if (outgoingMode === "original") await applyOutgoingMode();
   }
 
   async function deactivate() {
     active = false;
     replacementTrack = null;
+    translatedTrack = null;
+    originalMicTrack = null;
+    outgoingMode = "translated";
     const restores = [];
     for (const [sender, track] of originalTracks) {
       if (track.readyState === "live") restores.push(sender.replaceTrack(track));
     }
     await Promise.allSettled(restores);
     originalTracks.clear();
+    releaseMix();
     silenceTrack?.stop();
     silenceTrack = null;
     await silenceContext?.close().catch(() => {});
@@ -117,6 +212,8 @@
 
   window.addEventListener("live-voice:activate", () => activate().catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:translated-track", (event) => useTranslatedTrack(event.detail?.elementId).catch((error) => report("error", error.message)));
+  window.addEventListener("live-voice:original-track", (event) => useOriginalTrack(event.detail?.elementId).catch((error) => report("error", error.message)));
+  window.addEventListener("live-voice:outgoing-mode", (event) => setOutgoingMode(event.detail?.mode).catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:deactivate", () => deactivate().catch((error) => report("error", error.message)));
   window.__liveVoiceWebRtcBridge = { peerConnections, originalTracks };
   report("ready");

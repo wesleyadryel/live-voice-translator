@@ -23,7 +23,7 @@ meetings. Live Voice Translator translates both sides of the conversation in
 real time: you speak in your language, the other participant hears a translated
 voice, and their reply is translated back for you.
 
-Designed for multilingual calls in Google Meet, Zoom Web, and Yandex Telemost.
+Designed for multilingual calls in Google Meet, Zoom Web, Yandex Telemost, and Telegram Web.
 Use it for international sales calls, customer interviews, remote-team
 meetings, product demonstrations, support sessions, and everyday
 cross-language communication.
@@ -35,7 +35,7 @@ Key features:
 - Live speaker-labelled transcript in a Chrome side panel
 - Structured meeting notes with decisions, tasks, deadlines, and questions
 - Translation, Notes, Translation + Notes, and Transcript modes
-- English, Russian, Spanish, German, and French language choices
+- English, Russian, Spanish, German, French, and Brazilian Portuguese language choices
 - Local meeting history with search, deletion, and Markdown export
 - No developer-operated backend, analytics, or advertising
 

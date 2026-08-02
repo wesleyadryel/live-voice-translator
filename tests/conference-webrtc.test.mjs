@@ -9,13 +9,18 @@ const background = await readFile(new URL("../src/background.js", import.meta.ur
 const offscreen = await readFile(new URL("../src/offscreen.js", import.meta.url), "utf8");
 
 const matches = manifest.content_scripts.flatMap((entry) => entry.matches);
-for (const pattern of ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*"]) {
+for (const pattern of ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://web.telegram.org/*"]) {
   assert.ok(matches.includes(pattern), `conference adapter must load on ${pattern}`);
+  assert.ok(manifest.host_permissions.includes(pattern) || manifest.host_permissions.some((host) => host === pattern), `host permission missing for ${pattern}`);
 }
 assert.ok(manifest.content_scripts.some((entry) => entry.world === "MAIN" && entry.run_at === "document_start"), "WebRTC hook must run in the page's main world before conference scripts");
 assert.match(background, /Authorization: `Bearer \$\{apiKey\}`/, "only the service worker may attach the OpenAI API key");
 assert.equal(contentSource.includes("apiKey"), false, "the page-side translator must never receive the API key");
 assert.match(offscreen, /!settings\.webRtcOutgoing/, "offscreen must not create a second outgoing microphone translator");
+assert.match(contentSource, /CONFERENCE_SET_MUTE/, "the conference tab owns the outgoing audio and must accept mute commands");
+assert.match(background, /CONFERENCE_SET_MUTE/, "mute must reach the conference tab while WebRTC routing is active");
+assert.match(mainSource, /live-voice:outgoing-mode/, "the page bridge must accept translated/original/silence switches");
+assert.match(mainSource, /async function applyOriginalTracks/, "sending your untranslated voice must restore the page's own microphone track");
 assert.equal(background.includes("conferenceCable"), false, "browser conferences must not require a virtual audio cable");
 
 class FakeEvent {
@@ -23,7 +28,7 @@ class FakeEvent {
 }
 
 class FakeTrack {
-  constructor(name) { this.name = name; this.kind = "audio"; this.readyState = "live"; }
+  constructor(name) { this.name = name; this.kind = "audio"; this.readyState = "live"; this.enabled = true; }
   stop() { this.readyState = "ended"; }
 }
 
@@ -42,25 +47,36 @@ class FakePeerConnection {
 
 const listeners = new Map();
 const translatedTrack = new FakeTrack("translated");
+const capturedMicTrack = new FakeTrack("mic-capture");
 const document = {
   getElementById(id) {
-    return id === "translated-output" ? { srcObject: { getAudioTracks: () => [translatedTrack] } } : null;
+    if (id === "translated-output") return { srcObject: { getAudioTracks: () => [translatedTrack] } };
+    if (id === "original-output") return { srcObject: { getAudioTracks: () => [capturedMicTrack] } };
+    return null;
   }
 };
 const window = {
   RTCPeerConnection: FakePeerConnection,
   webkitRTCPeerConnection: FakePeerConnection,
+  MediaStream: class { constructor(tracks = []) { this.tracks = tracks; } getAudioTracks() { return this.tracks; } },
   AudioContext: class {
+    constructor() { this.mixed = []; }
     createOscillator() { return { connect: (node) => node, start() {} }; }
     createGain() { return { gain: { value: 1 }, connect: (node) => node }; }
-    createMediaStreamDestination() { return { stream: { getAudioTracks: () => [new FakeTrack("silence")] } }; }
+    createMediaStreamSource(stream) { const context = this; return { connect() { context.mixed.push(...stream.getAudioTracks()); } }; }
+    createMediaStreamDestination() {
+      const context = this;
+      const track = new FakeTrack("silence");
+      return { stream: { getAudioTracks: () => [Object.assign(track, { get mixed() { return context.mixed; } })] } };
+    }
+    async resume() {}
     async close() {}
   },
   addEventListener(type, listener) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(listener); },
   dispatchEvent(event) { for (const listener of listeners.get(event.type) || []) listener(event); }
 };
 
-vm.runInNewContext(mainSource, { window, document, CustomEvent: FakeEvent, URL, console });
+vm.runInNewContext(mainSource, { window, document, CustomEvent: FakeEvent, MediaStream: window.MediaStream, URL, console });
 const originalTrack = new FakeTrack("original");
 const pc = new window.RTCPeerConnection();
 const sender = pc.addTrack(originalTrack);
@@ -73,6 +89,42 @@ assert.equal(sender.track.name, "silence", "activation must mute the original la
 window.dispatchEvent(new FakeEvent("live-voice:translated-track", { detail: { elementId: "translated-output" } }));
 await flush();
 assert.equal(sender.track, translatedTrack, "the conference must send the translated OpenAI audio track");
+
+window.dispatchEvent(new FakeEvent("live-voice:original-track", { detail: { elementId: "original-output" } }));
+await flush();
+
+// The conference app routinely disables or ends the microphone track it handed
+// over once that track has been replaced; sending it back would be silence.
+originalTrack.enabled = false;
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "original" } }));
+await flush();
+assert.equal(sender.track, capturedMicTrack, "muting the outgoing translation must send the extension's live microphone capture");
+assert.equal(sender.track.enabled, true, "the untranslated voice must be sent enabled");
+
+const lateSender = pc.addTrack(new FakeTrack("late"));
+await flush();
+assert.equal(lateSender.track, capturedMicTrack, "a sender added while sending the original voice must carry it too");
+
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "both" } }));
+await flush();
+assert.deepEqual(sender.track.mixed, [capturedMicTrack, translatedTrack], "sending both voices must mix the capture and the interpreter into one track");
+
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "silence" } }));
+await flush();
+assert.equal(sender.track.name, "silence", "muting everything outgoing must leave the participant in silence");
+assert.deepEqual(sender.track.mixed ?? [], [], "the silence track must not carry the previous mix");
+
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "translated" } }));
+await flush();
+assert.equal(sender.track, translatedTrack, "unmuting must return to the translated audio without a reconnect");
+
+// With no usable capture left, the page's own track is the fallback and must be
+// re-enabled on the way out.
+capturedMicTrack.stop();
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "original" } }));
+await flush();
+assert.equal(sender.track, originalTrack, "without a live capture the page's own microphone must be restored");
+assert.equal(originalTrack.enabled, true, "a disabled fallback track must be re-enabled before it is sent");
 
 window.dispatchEvent(new FakeEvent("live-voice:deactivate"));
 await flush();

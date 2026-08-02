@@ -338,6 +338,39 @@ body.panel-shell {
 .button-progress { justify-self: center; width: 14px; height: 14px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; opacity: 0; }
 .session-button.is-loading .button-progress { opacity: 1; animation: spin .7s linear infinite; }
 .is-live .session-button { background: linear-gradient(180deg, #e14359, var(--danger)); box-shadow: 0 8px 18px rgba(216,45,69,.18); }
+.session-controls { display: grid; gap: 5px; margin-top: 7px; }
+.session-controls[hidden] { display: none; }
+.mute-row { display: grid; gap: 4px; }
+.mute-row[hidden] { display: none; }
+.mute-row-label { overflow: hidden; color: var(--secondary); font-size: 10px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.mute-buttons { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 5px; }
+.mute-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255,255,255,.5);
+  color: var(--secondary);
+  font-size: 10px;
+  font-weight: 620;
+  cursor: pointer;
+  transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease);
+}
+.mute-button:hover:not(:disabled) { background: var(--surface-soft); color: var(--text); }
+.mute-button:disabled { cursor: default; opacity: .45; }
+.mute-button:active { transform: scale(.97); }
+.mute-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mute-button svg { flex: none; width: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.mute-button .mute-slash { opacity: 0; transition: opacity 150ms var(--ease); }
+.mute-button[aria-pressed="true"] { border-color: rgba(216,45,69,.38); background: rgba(216,45,69,.1); color: var(--danger); }
+.mute-button[aria-pressed="true"] .mute-slash { opacity: 1; }
+/* An "add" toggle turns something on, so pressed is an accent state, not a warning. */
+.add-button[aria-pressed="true"] { border-color: rgba(38,116,237,.42); background: rgba(38,116,237,.12); color: var(--accent); }
 .live-transcript {
   display: flex;
   flex: 1 1 150px;

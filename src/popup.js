@@ -8,7 +8,10 @@ const elements = {
   keyStatus: $("#key-status"), usage: $("#usage-label"), source: $("#source-label"), target: $("#target-label"),
   setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"),
   modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages"),
-  transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy")
+  transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
+  sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"),
+  muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), muteOutgoing: $("#mute-outgoing"),
+  muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), muteIncoming: $("#mute-incoming")
 };
 
 const routeLabels = {
@@ -32,6 +35,8 @@ let activeTabUrl = "";
 let outgoingRouteStatus = null;
 let liveTranscript = [];
 let transcriptSignature = "";
+const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingMuted"];
+let mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, false]));
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
 const PHASES = { idle: "ready", connecting: "connecting", live: "live", reconnecting: "reconnecting", summarizing: "notes", disconnected: "error", failed: "error", error: "error", closed: "ready", limit: "limit" };
@@ -77,7 +82,7 @@ function captureKindFor(url = "") {
 function isSupportedConferenceUrl(url = "") {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com";
+    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com" || host === "web.telegram.org";
   } catch {
     return false;
   }
@@ -88,7 +93,8 @@ const MEDIA_LABELS = {
   ru: { source: "Видео", target: "Вы", sourceSetting: "Язык видео", targetSetting: "Переводить на" },
   es: { source: "Vídeo", target: "Usted", sourceSetting: "Idioma del vídeo", targetSetting: "Traducir a" },
   de: { source: "Video", target: "Sie", sourceSetting: "Videosprache", targetSetting: "Übersetzen in" },
-  fr: { source: "Vidéo", target: "Vous", sourceSetting: "Langue de la vidéo", targetSetting: "Traduire vers" }
+  fr: { source: "Vidéo", target: "Vous", sourceSetting: "Langue de la vidéo", targetSetting: "Traduire vers" },
+  "pt-BR": { source: "Vídeo", target: "Você", sourceSetting: "Idioma do vídeo", targetSetting: "Traduzir para" }
 };
 
 const CAPTURE_LABELS = {
@@ -96,7 +102,8 @@ const CAPTURE_LABELS = {
   ru: { meeting: "Встреча в браузере", media: "Медиа-вкладка" },
   es: { meeting: "Reunión web", media: "Pestaña multimedia" },
   de: { meeting: "Browser-Meeting", media: "Medien-Tab" },
-  fr: { meeting: "Réunion web", media: "Onglet multimédia" }
+  fr: { meeting: "Réunion web", media: "Onglet multimédia" },
+  "pt-BR": { meeting: "Reunião no navegador", media: "Aba de mídia" }
 };
 
 const TAB_ACCESS_HINT = {
@@ -104,7 +111,8 @@ const TAB_ACCESS_HINT = {
   ru: "Закройте панель и откройте её кнопкой Live Voice Translator на панели Chrome во вкладке с видео.",
   es: "Cierre este panel y ábralo con el icono de Live Voice Translator en la barra de Chrome desde la pestaña del vídeo.",
   de: "Schließen Sie dieses Panel und öffnen Sie es über das Live-Voice-Translator-Symbol in der Chrome-Leiste des Video-Tabs.",
-  fr: "Fermez ce panneau et ouvrez-le avec l’icône Live Voice Translator dans la barre Chrome de l’onglet vidéo."
+  fr: "Fermez ce panneau et ouvrez-le avec l’icône Live Voice Translator dans la barre Chrome de l’onglet vidéo.",
+  "pt-BR": "Feche este painel e abra-o pelo ícone do Live Voice Translator na barra do Chrome, na aba do vídeo."
 };
 
 const MEDIA_TRANSLATION_MODE_HINT = {
@@ -112,7 +120,8 @@ const MEDIA_TRANSLATION_MODE_HINT = {
   ru: "Для видео выберите режим «Перевод».",
   es: "Para el vídeo, elija el modo Traducir.",
   de: "Wählen Sie für Videos den Modus Übersetzen.",
-  fr: "Pour la vidéo, choisissez le mode Traduire."
+  fr: "Pour la vidéo, choisissez le mode Traduire.",
+  "pt-BR": "Para vídeo, escolha o modo Traduzir."
 };
 
 const MEDIA_PROGRESS = {
@@ -120,7 +129,8 @@ const MEDIA_PROGRESS = {
   ru: { waiting: "Слушаю первую фразу…", translated: (count) => `Переведено фраз: ${count}` },
   es: { waiting: "Escuchando la primera frase…", translated: (count) => `Frases traducidas: ${count}` },
   de: { waiting: "Warte auf den ersten Satz…", translated: (count) => `Übersetzte Sätze: ${count}` },
-  fr: { waiting: "Écoute de la première phrase…", translated: (count) => `Phrases traduites : ${count}` }
+  fr: { waiting: "Écoute de la première phrase…", translated: (count) => `Phrases traduites : ${count}` },
+  "pt-BR": { waiting: "Ouvindo a primeira frase…", translated: (count) => `Frases traduzidas: ${count}` }
 };
 
 function renderCaptureContext(kind) {
@@ -161,6 +171,50 @@ async function renderPreflight(settings) {
   setCheck("route", !voiceMode || routeActive || (conferenceReady && !active) ? "ok" : routeWaiting ? "warn" : "error", !voiceMode ? t(locale, "notRequired") : routeActive ? t(locale, "ready") : conferenceReady && !active ? "WebRTC" : routeWaiting ? t(locale, "connecting") : t(locale, "required"));
 }
 
+// The controls stay usable outside a session so the choice can be made up front.
+// A media tab sends nothing back, and the note-only modes never speak a
+// translation, so those rows and buttons drop out instead of lying about effect.
+function renderMuteControls() {
+  const translatesAloud = ["translation", "both"].includes(currentMode) || activeCaptureKind === "media";
+  elements.muteRowOutgoing.hidden = !translatesAloud || activeCaptureKind === "media";
+  elements.muteIncomingTranslation.hidden = !translatesAloud;
+  elements.muteIncomingInterpreter.hidden = !translatesAloud;
+  // A control is inert when a broader one already decides its outcome. The original
+  // voice is also forced on whenever no translation is playing — turning it off
+  // there would only produce silence, which the mute button already covers.
+  const outgoingTranslationAudible = !mutes.outgoingMuted && !mutes.outgoingTranslationMuted && !mutes.outgoingInterpreterOff;
+  const incomingTranslationAudible = !mutes.incomingMuted && !mutes.incomingTranslationMuted && !mutes.incomingInterpreterOff;
+  const forced = {
+    outgoingOriginalOn: !mutes.outgoingMuted && !outgoingTranslationAudible,
+    incomingOriginalOn: !mutes.incomingMuted && !incomingTranslationAudible
+  };
+  const overrides = {
+    outgoingInterpreterOff: mutes.outgoingMuted,
+    outgoingTranslationMuted: mutes.outgoingMuted || mutes.outgoingInterpreterOff,
+    outgoingOriginalOn: mutes.outgoingMuted || forced.outgoingOriginalOn,
+    incomingInterpreterOff: mutes.incomingMuted,
+    incomingTranslationMuted: mutes.incomingMuted || mutes.incomingInterpreterOff,
+    incomingOriginalOn: mutes.incomingMuted || forced.incomingOriginalOn
+  };
+  for (const [button, key, offKey, onKey] of [
+    [elements.muteOutgoingInterpreter, "outgoingInterpreterOff", "muteOutgoingInterpreter", "unmuteOutgoingInterpreter"],
+    [elements.muteOutgoingTranslation, "outgoingTranslationMuted", "muteOutgoingTranslation", "unmuteOutgoingTranslation"],
+    [elements.addOutgoingOriginal, "outgoingOriginalOn", "addOutgoingOriginal", "removeOutgoingOriginal"],
+    [elements.muteOutgoing, "outgoingMuted", "muteOutgoing", "unmuteOutgoing"],
+    [elements.muteIncomingInterpreter, "incomingInterpreterOff", "muteIncomingInterpreter", "unmuteIncomingInterpreter"],
+    [elements.muteIncomingTranslation, "incomingTranslationMuted", "muteIncomingTranslation", "unmuteIncomingTranslation"],
+    [elements.addIncomingOriginal, "incomingOriginalOn", "addIncomingOriginal", "removeIncomingOriginal"],
+    [elements.muteIncoming, "incomingMuted", "muteIncoming", "unmuteIncoming"]
+  ]) {
+    const pressed = mutes[key] || Boolean(forced[key]);
+    const label = t(locale, pressed ? onKey : offKey);
+    button.setAttribute("aria-pressed", String(pressed));
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.disabled = busy || Boolean(overrides[key]);
+  }
+}
+
 function render(state = currentState) {
   currentState = state;
   active = Boolean(state.active);
@@ -184,6 +238,7 @@ function render(state = currentState) {
     elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
   }
   elements.notice.hidden = active || Boolean(currentSettings.recordingNoticeAccepted);
+  renderMuteControls();
   renderTranscript();
   updateTimer();
 }
@@ -241,6 +296,7 @@ function updateTimer() {
 async function refresh() {
   const settings = await loadSettings();
   currentSettings = settings;
+  mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, Boolean(settings[key])]));
   locale = settings.interfaceLanguage || "en";
   localizePage(locale);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -359,6 +415,28 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   await saveSettings({ mode: currentMode });
   await refresh();
 }));
+async function toggleMute(key) {
+  mutes = { ...mutes, [key]: !mutes[key] };
+  renderMuteControls();
+  await saveSettings({ [key]: mutes[key] });
+  currentSettings[key] = mutes[key];
+  // A running session needs the change applied to the live audio; an idle one only
+  // needs the preference stored, which start() reads back.
+  if (active) await chrome.runtime.sendMessage({ type: "SET_MUTE", ...mutes });
+}
+
+for (const [button, key] of [
+  [elements.muteOutgoingInterpreter, "outgoingInterpreterOff"],
+  [elements.muteOutgoingTranslation, "outgoingTranslationMuted"],
+  [elements.addOutgoingOriginal, "outgoingOriginalOn"],
+  [elements.muteOutgoing, "outgoingMuted"],
+  [elements.muteIncomingInterpreter, "incomingInterpreterOff"],
+  [elements.muteIncomingTranslation, "incomingTranslationMuted"],
+  [elements.addIncomingOriginal, "incomingOriginalOn"],
+  [elements.muteIncoming, "incomingMuted"]
+]) {
+  button.addEventListener("click", () => { toggleMute(key).catch(() => refresh()); });
+}
 elements.interfaceLanguage.addEventListener("change", async () => { await saveSettings({ interfaceLanguage: elements.interfaceLanguage.value }); await refresh(); });
 elements.sourceLanguage.addEventListener("change", async () => {
   const key = activeCaptureKind === "media" ? "mediaSourceLanguage" : "sourceLanguage";

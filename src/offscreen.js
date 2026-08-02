@@ -18,6 +18,15 @@ let sessionTimer = null;
 let reconnectTimer = null;
 let reconnecting = false;
 let generation = 0;
+let outgoingMuted = false;
+let outgoingTranslationMuted = false;
+let incomingMuted = false;
+let incomingTranslationMuted = false;
+let outgoingInterpreterOff = false;
+let incomingInterpreterOff = false;
+let outgoingOriginalOn = false;
+let incomingOriginalOn = false;
+const passthroughs = new Map();
 let speakerRecorder = null;
 let speakerAudioChunks = [];
 let preparedCapture = null;
@@ -35,11 +44,71 @@ const SUMMARY_SECTION_TITLES = {
   English: ["Overview", "Key topics", "Decisions", "Tasks", "Deadlines", "Owners", "Open questions"],
   Spanish: ["Resumen", "Temas clave", "Decisiones", "Tareas", "Fechas límite", "Responsables", "Preguntas abiertas"],
   German: ["Überblick", "Wichtige Themen", "Entscheidungen", "Aufgaben", "Fristen", "Verantwortliche", "Offene Fragen"],
-  French: ["Vue d’ensemble", "Sujets clés", "Décisions", "Tâches", "Échéances", "Responsables", "Questions ouvertes"]
+  French: ["Vue d’ensemble", "Sujets clés", "Décisions", "Tâches", "Échéances", "Responsables", "Questions ouvertes"],
+  "Brazilian Portuguese": ["Visão geral", "Tópicos principais", "Decisões", "Tarefas", "Prazos", "Responsáveis", "Questões em aberto"]
 };
 const SUMMARY_KEYS = ["overview", "topics", "decisions", "tasks", "deadlines", "owners", "questions"];
 
 function tr(settings, key, variables) { return t(settings.interfaceLanguage || "en", key, variables); }
+
+// tabCapture and the WebRTC bridge both divert audio away from its normal path,
+// so an untranslated voice is only audible while its passthrough is connected.
+function setPassthrough(key, enabled, stream, deviceId) {
+  let entry = passthroughs.get(key);
+  if (enabled) {
+    if (!stream) return;
+    if (!entry) {
+      const context = new AudioContext();
+      entry = { context, source: context.createMediaStreamSource(stream), connected: false };
+      if ("setSinkId" in context) context.setSinkId(!deviceId || deviceId === "default" ? "" : deviceId).catch(() => {});
+      passthroughs.set(key, entry);
+    }
+    if (entry.connected) return;
+    entry.source.connect(entry.context.destination);
+    entry.context.resume().catch(() => {});
+    entry.connected = true;
+    return;
+  }
+  if (!entry?.connected) return;
+  try { entry.source.disconnect(); } catch {}
+  entry.connected = false;
+}
+
+async function releasePassthroughs() {
+  const entries = [...passthroughs.values()];
+  passthroughs.clear();
+  for (const entry of entries) {
+    try { entry.source.disconnect(); } catch {}
+    await entry.context.close().catch(() => {});
+  }
+}
+
+// Mute only gates audio: the realtime sessions stay connected and the transcript
+// keeps filling, so history is never silently interrupted by a muted moment.
+// Silencing a translation swaps in the matching original voice; silencing a whole
+// direction leaves it truly silent. The note-only modes never translate aloud, so
+// there the original audio plays unless the whole direction is muted.
+function applyMuteState() {
+  const audioEnabled = Boolean((MODES[activeSettings.mode] || MODES.both).audio);
+
+  // The untranslated audio plays when it is asked for, and also whenever the
+  // translated voice is not playing — muted, swapped out, or interpreter off — so
+  // a direction is never unintentionally silent.
+  const incomingTranslationAudible = audioEnabled && !incomingInterpreterOff && !incomingMuted && !incomingTranslationMuted;
+  incomingOutput.muted = !incomingTranslationAudible;
+  setPassthrough("incoming", !incomingMuted && (incomingOriginalOn || !incomingTranslationAudible), tabStream, activeSettings.incomingDeviceId);
+
+  // Solo routing plays the interpreter into the meeting's own output device. The
+  // WebRTC path never reaches here: its conference tab swaps the sender instead.
+  const outgoingTranslationAudible = audioEnabled && !outgoingInterpreterOff && !outgoingMuted && !outgoingTranslationMuted;
+  outgoingOutput.muted = !outgoingTranslationAudible;
+  setPassthrough("outgoing", audioEnabled && !outgoingMuted && (outgoingOriginalOn || !outgoingTranslationAudible), microphoneStream, activeSettings.outgoingDeviceId);
+  outgoingMonitor.muted = !outgoingTranslationAudible || activeSettings.audioProfile !== "conference" || activeSettings.monitorLevel === "off";
+}
+
+function statusState() {
+  return { ...state, outgoingMuted, outgoingTranslationMuted, incomingMuted, incomingTranslationMuted, outgoingInterpreterOff, incomingInterpreterOff, outgoingOriginalOn, incomingOriginalOn };
+}
 
 function freshState(overrides = {}) {
   return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, translatedUtteranceCount: 0, reconnectAttempt: 0, ...overrides };
@@ -246,6 +315,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const reusableTabStream = reason === "user" && activeSettings.captureKind === "media" && tabStream?.active ? tabStream : null;
   generation += 1;
   reconnecting = false;
+  await releasePassthroughs();
   clearLifecycleTimers();
   state = { ...state, active: false };
   incomingTranslator?.close();
@@ -296,13 +366,42 @@ function translatorOptions(settings, mode, outgoing) {
   };
 }
 
+// A direction whose interpreter is switched off holds no realtime session at all,
+// so no audio is uploaded and no tokens are spent. Its transcript pauses too:
+// nothing reaches the model to be transcribed.
+function outgoingInterpreterWanted(settings) {
+  return settings.captureKind !== "media" && !settings.webRtcOutgoing && !outgoingInterpreterOff;
+}
+
+async function applyInterpreterState() {
+  if (!state.active || reconnecting) return;
+  const settings = activeSettings;
+  const mode = MODES[settings.mode] || MODES.both;
+  const tasks = [];
+  if (!outgoingInterpreterWanted(settings)) {
+    outgoingTranslator?.close();
+    outgoingTranslator = null;
+  } else if (!outgoingTranslator) {
+    outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
+    tasks.push(outgoingTranslator.connect());
+  }
+  if (incomingInterpreterOff) {
+    incomingTranslator?.close();
+    incomingTranslator = null;
+  } else if (!incomingTranslator) {
+    incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
+    tasks.push(incomingTranslator.connect());
+  }
+  await Promise.all(tasks);
+}
+
 async function connectPair(settings, mode) {
   // A media tab (currently YouTube) needs only the tab-to-listener direction.
   // Avoiding a microphone stream keeps video translation usable without mic permission
   // and prevents an unused second realtime session.
-  if (settings.captureKind !== "media" && !settings.webRtcOutgoing) outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
-  incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
-  await Promise.all([outgoingTranslator?.connect(), incomingTranslator.connect()]);
+  outgoingTranslator = outgoingInterpreterWanted(settings) ? new RealtimeTranslator(translatorOptions(settings, mode, true)) : null;
+  incomingTranslator = incomingInterpreterOff ? null : new RealtimeTranslator(translatorOptions(settings, mode, false));
+  await Promise.all([outgoingTranslator?.connect(), incomingTranslator?.connect()]);
 }
 
 function scheduleReconnect(settings, mode) {
@@ -350,8 +449,15 @@ async function start(suppliedSettings = {}) {
     await applySink(outgoingOutput, settings.outgoingDeviceId);
     await applySink(incomingOutput, settings.incomingDeviceId);
     await applySink(outgoingMonitor, settings.incomingDeviceId);
-    outgoingOutput.muted = incomingOutput.muted = !mode.audio;
-    outgoingMonitor.muted = !mode.audio || settings.audioProfile !== "conference" || settings.monitorLevel === "off";
+    outgoingMuted = Boolean(settings.outgoingMuted);
+    outgoingTranslationMuted = Boolean(settings.outgoingTranslationMuted);
+    incomingMuted = Boolean(settings.incomingMuted);
+    incomingTranslationMuted = Boolean(settings.incomingTranslationMuted);
+    outgoingInterpreterOff = Boolean(settings.outgoingInterpreterOff);
+    incomingInterpreterOff = Boolean(settings.incomingInterpreterOff);
+    outgoingOriginalOn = Boolean(settings.outgoingOriginalOn);
+    incomingOriginalOn = Boolean(settings.incomingOriginalOn);
+    applyMuteState();
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
     generation += 1;
     await connectPair(settings, mode);
@@ -368,8 +474,23 @@ async function start(suppliedSettings = {}) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
   if (message.type === "GET_STATUS") {
-    sendResponse({ ok: true, state, liveTranscript: liveTranscript.slice(-16), preparedTabId: preparedCapture?.tabId || null });
+    sendResponse({ ok: true, state: statusState(), liveTranscript: liveTranscript.slice(-16), preparedTabId: preparedCapture?.tabId || null });
     return false;
+  }
+  if (message.type === "SET_MUTE") {
+    if (typeof message.outgoingMuted === "boolean") outgoingMuted = message.outgoingMuted;
+    if (typeof message.outgoingTranslationMuted === "boolean") outgoingTranslationMuted = message.outgoingTranslationMuted;
+    if (typeof message.incomingMuted === "boolean") incomingMuted = message.incomingMuted;
+    if (typeof message.incomingTranslationMuted === "boolean") incomingTranslationMuted = message.incomingTranslationMuted;
+    if (typeof message.outgoingInterpreterOff === "boolean") outgoingInterpreterOff = message.outgoingInterpreterOff;
+    if (typeof message.incomingInterpreterOff === "boolean") incomingInterpreterOff = message.incomingInterpreterOff;
+    if (typeof message.outgoingOriginalOn === "boolean") outgoingOriginalOn = message.outgoingOriginalOn;
+    if (typeof message.incomingOriginalOn === "boolean") incomingOriginalOn = message.incomingOriginalOn;
+    applyMuteState();
+    applyInterpreterState()
+      .then(() => sendResponse({ ok: true, state: statusState() }))
+      .catch((error) => sendResponse({ ok: false, error: error.message, state: statusState() }));
+    return true;
   }
   if (message.type === "ADD_OUTGOING_TRANSCRIPT") {
     if (state.active && message.text) {

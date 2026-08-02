@@ -10,7 +10,7 @@ const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURI
 function isSupportedConferenceUrl(url = "") {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com";
+    return host === "meet.google.com" || host.endsWith(".zoom.us") || host === "telemost.yandex.ru" || host === "telemost.yandex.com" || host === "web.telegram.org";
   } catch {
     return false;
   }
@@ -173,7 +173,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           settings: {
             sourceLanguage: settings.sourceLanguage,
             targetLanguage: settings.targetLanguage,
-            outgoingVoice: settings.outgoingVoice
+            outgoingVoice: settings.outgoingVoice,
+            outgoingMuted: Boolean(settings.outgoingMuted),
+            outgoingTranslationMuted: Boolean(settings.outgoingTranslationMuted),
+            outgoingInterpreterOff: Boolean(settings.outgoingInterpreterOff),
+            outgoingOriginalOn: Boolean(settings.outgoingOriginalOn)
           }
         });
         if (!outgoing?.ok) throw new Error(outgoing?.error || "CONFERENCE_WEBRTC_ROUTE_FAILED");
@@ -192,6 +196,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await setActionState(false, true);
       sendResponse({ ok: false, error: error.message });
     });
+    return true;
+  }
+
+  if (message.type === "SET_MUTE") {
+    (async () => {
+      await ensureOffscreenDocument();
+      // The outgoing audio lives in the conference tab whenever WebRTC routing is
+      // active, so that half of the request has to reach the content script too.
+      if (activeConferenceTabId) {
+        await chrome.tabs.sendMessage(activeConferenceTabId, {
+          type: "CONFERENCE_SET_MUTE",
+          outgoingMuted: message.outgoingMuted,
+          outgoingTranslationMuted: message.outgoingTranslationMuted,
+          outgoingInterpreterOff: message.outgoingInterpreterOff,
+          outgoingOriginalOn: message.outgoingOriginalOn
+        }).catch(() => {});
+      }
+      sendResponse(await chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "SET_MUTE",
+        outgoingMuted: message.outgoingMuted,
+        outgoingTranslationMuted: message.outgoingTranslationMuted,
+        outgoingInterpreterOff: message.outgoingInterpreterOff,
+        outgoingOriginalOn: message.outgoingOriginalOn,
+        incomingMuted: message.incomingMuted,
+        incomingTranslationMuted: message.incomingTranslationMuted,
+        incomingInterpreterOff: message.incomingInterpreterOff,
+        incomingOriginalOn: message.incomingOriginalOn
+      }));
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
