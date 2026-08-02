@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS = {
   incomingInterpreterOff: false,
   outgoingOriginalOn: false,
   incomingOriginalOn: false,
+  outgoingMonitorOn: false,
   summaryDetail: "standard",
   summarySections: {
     overview: true,

@@ -10,7 +10,7 @@ const elements = {
   modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages"),
   transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
   sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"),
-  muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), muteOutgoing: $("#mute-outgoing"),
+  muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), addOutgoingMonitor: $("#add-outgoing-monitor"), muteOutgoing: $("#mute-outgoing"),
   muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), muteIncoming: $("#mute-incoming")
 };
 
@@ -35,7 +35,7 @@ let activeTabUrl = "";
 let outgoingRouteStatus = null;
 let liveTranscript = [];
 let transcriptSignature = "";
-const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingMuted"];
+const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMonitorOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingMuted"];
 let mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, false]));
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
@@ -192,6 +192,8 @@ function renderMuteControls() {
     outgoingInterpreterOff: mutes.outgoingMuted,
     outgoingTranslationMuted: mutes.outgoingMuted || mutes.outgoingInterpreterOff,
     outgoingOriginalOn: mutes.outgoingMuted || forced.outgoingOriginalOn,
+    // Nothing translated is going out, so there is no return feed to listen to.
+    outgoingMonitorOn: !outgoingTranslationAudible,
     incomingInterpreterOff: mutes.incomingMuted,
     incomingTranslationMuted: mutes.incomingMuted || mutes.incomingInterpreterOff,
     incomingOriginalOn: mutes.incomingMuted || forced.incomingOriginalOn
@@ -200,6 +202,7 @@ function renderMuteControls() {
     [elements.muteOutgoingInterpreter, "outgoingInterpreterOff", "muteOutgoingInterpreter", "unmuteOutgoingInterpreter"],
     [elements.muteOutgoingTranslation, "outgoingTranslationMuted", "muteOutgoingTranslation", "unmuteOutgoingTranslation"],
     [elements.addOutgoingOriginal, "outgoingOriginalOn", "addOutgoingOriginal", "removeOutgoingOriginal"],
+    [elements.addOutgoingMonitor, "outgoingMonitorOn", "enableOutgoingMonitor", "disableOutgoingMonitor"],
     [elements.muteOutgoing, "outgoingMuted", "muteOutgoing", "unmuteOutgoing"],
     [elements.muteIncomingInterpreter, "incomingInterpreterOff", "muteIncomingInterpreter", "unmuteIncomingInterpreter"],
     [elements.muteIncomingTranslation, "incomingTranslationMuted", "muteIncomingTranslation", "unmuteIncomingTranslation"],
@@ -429,6 +432,7 @@ for (const [button, key] of [
   [elements.muteOutgoingInterpreter, "outgoingInterpreterOff"],
   [elements.muteOutgoingTranslation, "outgoingTranslationMuted"],
   [elements.addOutgoingOriginal, "outgoingOriginalOn"],
+  [elements.addOutgoingMonitor, "outgoingMonitorOn"],
   [elements.muteOutgoing, "outgoingMuted"],
   [elements.muteIncomingInterpreter, "incomingInterpreterOff"],
   [elements.muteIncomingTranslation, "incomingTranslationMuted"],

@@ -44,6 +44,8 @@ call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
   translation to fall back to the untranslated voice, add the original voice to hear
   or send both at once, or mute a whole direction for real silence. Only switching an
   interpreter off pauses that side's transcript
+- **Return feed**: hear the translated voice the participant is actually receiving,
+  so you can tell how you are coming across
 - **Structured meeting notes** with decisions, tasks, deadlines, and open questions
 - **Six interface languages**: English, Russian, Spanish, German, French, and Brazilian Portuguese
 - **Local-first history** with configurable retention and Markdown export

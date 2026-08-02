@@ -142,6 +142,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Local loopback that carries the return feed out of the captured tab.
+  if (message.type === "CONFERENCE_MONITOR_OFFER") {
+    (async () => {
+      if (sender.tab?.id !== activeConferenceTabId) throw new Error("CONFERENCE_SESSION_NOT_ACTIVE");
+      await ensureOffscreenDocument();
+      sendResponse(await chrome.runtime.sendMessage({ target: "offscreen", type: "MONITOR_OFFER", sdp: message.sdp }));
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "CONFERENCE_MONITOR_STOP") {
+    chrome.runtime.sendMessage({ target: "offscreen", type: "MONITOR_STOP" }).catch(() => {});
+    return false;
+  }
+
   if (message.type === "CONFERENCE_OUTGOING_TRANSCRIPT") {
     if (sender.tab?.id !== activeConferenceTabId) return false;
     chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_OUTGOING_TRANSCRIPT", text: message.text, language: message.language }).catch(() => {});
@@ -191,7 +206,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             outgoingMuted: Boolean(settings.outgoingMuted),
             outgoingTranslationMuted: Boolean(settings.outgoingTranslationMuted),
             outgoingInterpreterOff: Boolean(settings.outgoingInterpreterOff),
-            outgoingOriginalOn: Boolean(settings.outgoingOriginalOn)
+            outgoingOriginalOn: Boolean(settings.outgoingOriginalOn),
+            outgoingMonitorOn: Boolean(settings.outgoingMonitorOn)
           }
         });
         if (!outgoing?.ok) throw new Error(outgoing?.error || "CONFERENCE_WEBRTC_ROUTE_FAILED");
@@ -224,7 +240,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           outgoingMuted: message.outgoingMuted,
           outgoingTranslationMuted: message.outgoingTranslationMuted,
           outgoingInterpreterOff: message.outgoingInterpreterOff,
-          outgoingOriginalOn: message.outgoingOriginalOn
+          outgoingOriginalOn: message.outgoingOriginalOn,
+          outgoingMonitorOn: message.outgoingMonitorOn
         }).catch(() => {});
       }
       sendResponse(await chrome.runtime.sendMessage({
@@ -234,6 +251,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         outgoingTranslationMuted: message.outgoingTranslationMuted,
         outgoingInterpreterOff: message.outgoingInterpreterOff,
         outgoingOriginalOn: message.outgoingOriginalOn,
+        outgoingMonitorOn: message.outgoingMonitorOn,
         incomingMuted: message.incomingMuted,
         incomingTranslationMuted: message.incomingTranslationMuted,
         incomingInterpreterOff: message.incomingInterpreterOff,

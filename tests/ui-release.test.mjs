@@ -23,8 +23,8 @@ for (const key of new Set(translationKeys)) assert.notEqual(t("en", key), key, `
 for (const language of ["en", "ru", "es", "de", "fr", "pt-BR"]) {
   // Button captions can legitimately be identical across languages ("Original"),
   // but the descriptive titles must be genuinely translated.
-  const captions = ["muteAll", "original", "interpreter"];
-  const titles = ["muteOutgoingInterpreter", "unmuteOutgoingInterpreter", "muteIncomingInterpreter", "unmuteIncomingInterpreter", "muteOutgoingTranslation", "unmuteOutgoingTranslation", "muteOutgoing", "unmuteOutgoing", "muteIncomingTranslation", "unmuteIncomingTranslation", "muteIncoming", "unmuteIncoming", "addOutgoingOriginal", "removeOutgoingOriginal", "addIncomingOriginal", "removeIncomingOriginal"];
+  const captions = ["muteAll", "original", "interpreter", "monitorLabel"];
+  const titles = ["enableOutgoingMonitor", "disableOutgoingMonitor","muteOutgoingInterpreter", "unmuteOutgoingInterpreter", "muteIncomingInterpreter", "unmuteIncomingInterpreter", "muteOutgoingTranslation", "unmuteOutgoingTranslation", "muteOutgoing", "unmuteOutgoing", "muteIncomingTranslation", "unmuteIncomingTranslation", "muteIncoming", "unmuteIncoming", "addOutgoingOriginal", "removeOutgoingOriginal", "addIncomingOriginal", "removeIncomingOriginal"];
   for (const key of [...captions, ...titles]) assert.notEqual(t(language, key), key, `${language}.${key} is missing`);
   for (const key of titles) {
     if (language !== "en") assert.notEqual(t(language, key), t("en", key), `${language}.${key} still falls back to English`);
@@ -41,7 +41,7 @@ assert.match(popup, /aria-live="polite"/, "new transcript lines must be announce
 for (const page of [popup, options, history]) {
   assert.match(page, /class="(?:app-icon|brand-mark)" src="\.\.\/assets\/icon-128\.png"/, "every extension surface must use the release app icon");
 }
-for (const id of ["mute-outgoing-interpreter", "mute-outgoing-translation", "add-outgoing-original", "mute-outgoing", "mute-incoming-interpreter", "mute-incoming-translation", "add-incoming-original", "mute-incoming"]) {
+for (const id of ["mute-outgoing-interpreter", "mute-outgoing-translation", "add-outgoing-original", "add-outgoing-monitor", "mute-outgoing", "mute-incoming-interpreter", "mute-incoming-translation", "add-incoming-original", "mute-incoming"]) {
   assert.match(popup, new RegExp(`id="${id}"`), `the main panel must expose the ${id} control`);
 }
 assert.match(popupJs, /aria-pressed/, "mute controls must announce their state accessibly");
@@ -57,6 +57,13 @@ assert.match(offscreenJs, /incomingOutput\.muted = !incomingTranslationAudible/,
 assert.match(offscreenJs, /setPassthrough\("outgoing", audioEnabled && !outgoingMuted && \(outgoingOriginalOn \|\| !outgoingTranslationAudible\)/, "your original voice must be sent on request, and whenever the translation is not being sent");
 assert.match(offscreenJs, /setPassthrough\("incoming", !incomingMuted && \(incomingOriginalOn \|\| !incomingTranslationAudible\)/, "the original voice must play on request, and whenever the translation is not playing");
 assert.match(releaseCss, /\.add-button\[aria-pressed="true"\]/, "an add-style toggle must not read as a mute warning when enabled");
+// Playing the return feed inside the captured tab put it straight back into
+// tabCapture, so the incoming interpreter translated the outgoing translation.
+assert.match(contentModuleJs, /if \(outputElement\) outputElement\.muted = true;/, "the conference tab must never play the return feed itself");
+assert.equal(/outputElement\.muted = !monitorOn/.test(contentModuleJs), false, "unmuting in the tab feeds the return audio back into tab capture");
+assert.match(contentModuleJs, /CONFERENCE_MONITOR_OFFER/, "the return feed must leave the tab over a loopback connection");
+assert.match(offscreenJs, /acceptMonitorFeed/, "the offscreen document must play the return feed, out of tabCapture's reach");
+assert.match(offscreenJs, /outgoingMonitor\.muted = !outgoingTranslationAudible \|\| !outgoingMonitorOn/, "the return feed must follow the panel switch and stop when nothing is being sent");
 assert.match(offscreenJs, /incomingTranslator\?\.close\(\);\s*\n\s*incomingTranslator = null;/, "switching the interpreter off must close its realtime session so no tokens are spent");
 assert.match(offscreenJs, /incomingTranslator = incomingInterpreterOff \? null :/, "a reconnect must not revive an interpreter the user switched off");
 assert.match(contentModuleJs, /if \(interpreterOff\) return \{ ok: true \};/, "starting with the outgoing interpreter off must not open a realtime session");

@@ -26,6 +26,8 @@ let outgoingInterpreterOff = false;
 let incomingInterpreterOff = false;
 let outgoingOriginalOn = false;
 let incomingOriginalOn = false;
+let outgoingMonitorOn = false;
+let monitorFeedPc = null;
 const passthroughs = new Map();
 let speakerRecorder = null;
 let speakerAudioChunks = [];
@@ -74,6 +76,40 @@ function setPassthrough(key, enabled, stream, deviceId) {
   entry.connected = false;
 }
 
+// Receives the conference tab's translated audio over a local loopback connection.
+// Playing it here instead of in the tab is what stops tabCapture from feeding the
+// return audio back into the incoming interpreter.
+function stopMonitorFeed() {
+  monitorFeedPc?.close();
+  monitorFeedPc = null;
+  outgoingMonitor.srcObject = null;
+}
+
+async function acceptMonitorFeed(sdp) {
+  stopMonitorFeed();
+  const pc = new RTCPeerConnection();
+  monitorFeedPc = pc;
+  pc.ontrack = (event) => {
+    outgoingMonitor.srcObject = event.streams[0];
+    outgoingMonitor.play().catch(() => {});
+    applyMuteState();
+  };
+  await pc.setRemoteDescription({ type: "offer", sdp });
+  await pc.setLocalDescription(await pc.createAnswer());
+  if (pc.iceGatheringState !== "complete") {
+    await new Promise((resolve) => {
+      const done = () => {
+        if (pc.iceGatheringState !== "complete") return;
+        pc.removeEventListener("icegatheringstatechange", done);
+        resolve();
+      };
+      pc.addEventListener("icegatheringstatechange", done);
+      setTimeout(resolve, 1500);
+    });
+  }
+  return pc.localDescription.sdp;
+}
+
 async function releasePassthroughs() {
   const entries = [...passthroughs.values()];
   passthroughs.clear();
@@ -103,11 +139,13 @@ function applyMuteState() {
   const outgoingTranslationAudible = audioEnabled && !outgoingInterpreterOff && !outgoingMuted && !outgoingTranslationMuted;
   outgoingOutput.muted = !outgoingTranslationAudible;
   setPassthrough("outgoing", audioEnabled && !outgoingMuted && (outgoingOriginalOn || !outgoingTranslationAudible), microphoneStream, activeSettings.outgoingDeviceId);
-  outgoingMonitor.muted = !outgoingTranslationAudible || activeSettings.audioProfile !== "conference" || activeSettings.monitorLevel === "off";
+  // The panel's return-feed button is the explicit switch; monitorLevel in settings
+  // stays responsible for how loud that return feed is.
+  outgoingMonitor.muted = !outgoingTranslationAudible || !outgoingMonitorOn;
 }
 
 function statusState() {
-  return { ...state, outgoingMuted, outgoingTranslationMuted, incomingMuted, incomingTranslationMuted, outgoingInterpreterOff, incomingInterpreterOff, outgoingOriginalOn, incomingOriginalOn };
+  return { ...state, outgoingMuted, outgoingTranslationMuted, incomingMuted, incomingTranslationMuted, outgoingInterpreterOff, incomingInterpreterOff, outgoingOriginalOn, incomingOriginalOn, outgoingMonitorOn };
 }
 
 function freshState(overrides = {}) {
@@ -318,6 +356,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const reusableTabStream = reason !== "tab_closed" && tabStream?.active ? tabStream : null;
   generation += 1;
   reconnecting = false;
+  stopMonitorFeed();
   await releasePassthroughs();
   clearLifecycleTimers();
   state = { ...state, active: false };
@@ -463,6 +502,7 @@ async function start(suppliedSettings = {}) {
     incomingInterpreterOff = Boolean(settings.incomingInterpreterOff);
     outgoingOriginalOn = Boolean(settings.outgoingOriginalOn);
     incomingOriginalOn = Boolean(settings.incomingOriginalOn);
+    outgoingMonitorOn = Boolean(settings.outgoingMonitorOn);
     applyMuteState();
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
     generation += 1;
@@ -483,6 +523,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true, state: statusState(), liveTranscript: liveTranscript.slice(-16), preparedTabId: preparedCapture?.tabId || null });
     return false;
   }
+  if (message.type === "MONITOR_STOP") {
+    stopMonitorFeed();
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === "MONITOR_OFFER") {
+    acceptMonitorFeed(message.sdp)
+      .then((answerSdp) => sendResponse({ ok: true, answerSdp }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message.type === "SET_MUTE") {
     if (typeof message.outgoingMuted === "boolean") outgoingMuted = message.outgoingMuted;
     if (typeof message.outgoingTranslationMuted === "boolean") outgoingTranslationMuted = message.outgoingTranslationMuted;
@@ -492,6 +543,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (typeof message.incomingInterpreterOff === "boolean") incomingInterpreterOff = message.incomingInterpreterOff;
     if (typeof message.outgoingOriginalOn === "boolean") outgoingOriginalOn = message.outgoingOriginalOn;
     if (typeof message.incomingOriginalOn === "boolean") incomingOriginalOn = message.incomingOriginalOn;
+    if (typeof message.outgoingMonitorOn === "boolean") outgoingMonitorOn = message.outgoingMonitorOn;
     applyMuteState();
     applyInterpreterState()
       .then(() => sendResponse({ ok: true, state: statusState() }))
