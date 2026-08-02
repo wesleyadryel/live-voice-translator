@@ -24,8 +24,12 @@
     window.dispatchEvent(new CustomEvent("live-voice:route-status", { detail: { status, detail } }));
   }
 
+  function isBridgeTrack(track) {
+    return Boolean(track) && (track === translatedTrack || track === originalMicTrack || track === silenceTrack || track === mixTrack);
+  }
+
   function remember(sender, track = sender?.track) {
-    if (sender && track?.kind === "audio" && !originalTracks.has(sender)) originalTracks.set(sender, track);
+    if (sender && track?.kind === "audio" && !isBridgeTrack(track) && !originalTracks.has(sender)) originalTracks.set(sender, track);
   }
 
   async function replaceSender(sender, track) {
@@ -193,6 +197,61 @@
       return transceiver;
     };
   }
+
+  // Discord takes its microphone back constantly (voice-activity gating, mute
+  // toggles), which silently undid the routing and left the participant hearing
+  // nothing. The other apps route correctly without this, so the guard is scoped to
+  // Discord rather than changing behaviour that already works elsewhere.
+  const routingGuardNeeded = /(^|\.)discord\.com$/i.test(window.location?.hostname || "");
+  const senderPrototype = window.RTCRtpSender?.prototype;
+  const nativeReplaceTrack = senderPrototype?.replaceTrack;
+  if (routingGuardNeeded && nativeReplaceTrack) {
+    senderPrototype.replaceTrack = function replaceTrack(track) {
+      const fromPage = !isBridgeTrack(track);
+      // Always the newest page track, so a microphone switch is not restored stale.
+      if (fromPage && track?.kind === "audio") originalTracks.set(this, track);
+      // Swallow the app's swap instead of undoing it afterwards. Every replaceTrack
+      // interrupts the outgoing stream for a moment, so letting it through and
+      // switching back would chop the translated voice several times a second.
+      if (active && replacementTrack && fromPage && track?.kind === "audio") return Promise.resolve();
+      return nativeReplaceTrack.call(this, track);
+    };
+  }
+
+  // Voice-activity gating also mutes by flipping track.enabled. Waiting for the
+  // watchdog to undo that would drop up to a second of speech, so the routed track
+  // simply refuses to be disabled while it is live.
+  const enabledProperty = routingGuardNeeded && window.MediaStreamTrack
+    ? Object.getOwnPropertyDescriptor(window.MediaStreamTrack.prototype, "enabled")
+    : null;
+  if (enabledProperty?.get && enabledProperty?.set) {
+    Object.defineProperty(window.MediaStreamTrack.prototype, "enabled", {
+      configurable: true,
+      enumerable: enabledProperty.enumerable,
+      get() { return enabledProperty.get.call(this); },
+      set(value) {
+        if (!value && active && isBridgeTrack(this)) return;
+        enabledProperty.set.call(this, value);
+      }
+    });
+  }
+
+  // Some apps also gate by disabling the outgoing track instead of replacing it, and
+  // a renegotiation can install a sender the hooks above never saw. A slow watchdog
+  // costs nothing and only acts when the routing has actually drifted.
+  function guardRouting() {
+    if (!active || !replacementTrack) return;
+    if (replacementTrack.readyState === "live") replacementTrack.enabled = true;
+    for (const pc of peerConnections) {
+      for (const sender of pc.getSenders?.() || []) {
+        const isAudioSender = sender.track?.kind === "audio" || originalTracks.has(sender);
+        if (!isAudioSender || sender.track === replacementTrack) continue;
+        remember(sender);
+        (nativeReplaceTrack || sender.replaceTrack).call(sender, replacementTrack).catch(() => {});
+      }
+    }
+  }
+  if (routingGuardNeeded) setInterval(guardRouting, 1000);
 
   const nativeClose = NativePeerConnection.prototype.close;
   NativePeerConnection.prototype.close = function close() {

@@ -36,21 +36,38 @@ assert.match(contentSource, /CONFERENCE_SET_MUTE/, "the conference tab owns the 
 assert.match(background, /CONFERENCE_SET_MUTE/, "mute must reach the conference tab while WebRTC routing is active");
 assert.match(mainSource, /live-voice:outgoing-mode/, "the page bridge must accept translated/original/silence switches");
 assert.match(mainSource, /async function applyOriginalTracks/, "sending your untranslated voice must restore the page's own microphone track");
+assert.match(mainSource, /senderPrototype\.replaceTrack = function replaceTrack/, "the app reclaiming its microphone must not silently undo the routing");
+assert.match(mainSource, /routingGuardNeeded = \/\(\^\|\\\.\)discord\\\.com\$\/i\.test/, "the routing guard must stay scoped to Discord");
+assert.match(mainSource, /if \(routingGuardNeeded && nativeReplaceTrack\)/, "the replaceTrack patch must not apply to apps that already route correctly");
+assert.match(mainSource, /if \(routingGuardNeeded\) setInterval\(guardRouting/, "the watchdog must not run on apps that already route correctly");
 assert.equal(background.includes("conferenceCable"), false, "browser conferences must not require a virtual audio cable");
 
 class FakeEvent {
   constructor(type, init = {}) { this.type = type; this.detail = init.detail; }
 }
 
-class FakeTrack {
-  constructor(name) { this.name = name; this.kind = "audio"; this.readyState = "live"; this.enabled = true; }
+// enabled is an accessor on MediaStreamTrack.prototype, which is what the bridge
+// guards against voice-activity muting, so the fake mirrors that shape.
+class FakeMediaStreamTrack {
+  constructor(name) { this.name = name; this.kind = "audio"; this.readyState = "live"; this.enabledValue = true; }
   stop() { this.readyState = "ended"; }
 }
+Object.defineProperty(FakeMediaStreamTrack.prototype, "enabled", {
+  configurable: true,
+  get() { return this.enabledValue; },
+  set(value) { this.enabledValue = value; }
+});
+class FakeTrack extends FakeMediaStreamTrack {}
 
+// replaceTrack lives on the prototype, exactly like RTCRtpSender, so the bridge's
+// patch is exercised the same way it is in a real conference tab.
 class FakeSender {
   constructor(track) { this.track = track; this.history = [track]; }
-  async replaceTrack(track) { this.track = track; this.history.push(track); }
 }
+FakeSender.prototype.replaceTrack = async function replaceTrack(track) {
+  this.track = track;
+  this.history.push(track);
+};
 
 class FakePeerConnection {
   constructor() { this.senders = []; }
@@ -71,8 +88,12 @@ const document = {
   }
 };
 const window = {
+  // The routing guard is scoped to Discord, so the bridge is exercised on that host.
+  location: { hostname: "discord.com" },
   RTCPeerConnection: FakePeerConnection,
   webkitRTCPeerConnection: FakePeerConnection,
+  RTCRtpSender: FakeSender,
+  MediaStreamTrack: FakeMediaStreamTrack,
   MediaStream: class { constructor(tracks = []) { this.tracks = tracks; } getAudioTracks() { return this.tracks; } },
   AudioContext: class {
     constructor() { this.mixed = []; }
@@ -91,7 +112,16 @@ const window = {
   dispatchEvent(event) { for (const listener of listeners.get(event.type) || []) listener(event); }
 };
 
-vm.runInNewContext(mainSource, { window, document, CustomEvent: FakeEvent, MediaStream: window.MediaStream, URL, console });
+let watchdog = () => {};
+vm.runInNewContext(mainSource, {
+  window,
+  document,
+  CustomEvent: FakeEvent,
+  MediaStream: window.MediaStream,
+  setInterval: (fn) => { watchdog = fn; return 0; },
+  URL,
+  console
+});
 const originalTrack = new FakeTrack("original");
 const pc = new window.RTCPeerConnection();
 const sender = pc.addTrack(originalTrack);
@@ -104,6 +134,29 @@ assert.equal(sender.track.name, "silence", "activation must mute the original la
 window.dispatchEvent(new FakeEvent("live-voice:translated-track", { detail: { elementId: "translated-output" } }));
 await flush();
 assert.equal(sender.track, translatedTrack, "the conference must send the translated OpenAI audio track");
+
+// Discord re-installs its own microphone whenever voice-activity gating flips, which
+// silently undid the routing and left the participant hearing nothing. The swap must
+// be refused outright: undoing it afterwards costs an interruption of the outgoing
+// stream every time, which is heard as a chopped-up voice.
+const pageMicTrack = new FakeTrack("page-mic");
+const swapsBefore = sender.history.length;
+await sender.replaceTrack(pageMicTrack);
+await flush();
+assert.equal(sender.track, translatedTrack, "the app taking its microphone back must not undo the routing");
+assert.equal(sender.history.length, swapsBefore, "the routed track must never be swapped out and back, which glitches the audio");
+
+// Gating also mutes by flipping enabled; that must be refused immediately rather
+// than corrected a second later, which would drop speech.
+translatedTrack.enabled = false;
+assert.equal(translatedTrack.enabled, true, "the routed track must refuse to be muted while it is live");
+
+// A sender that appears through a renegotiation the hooks never saw is the one case
+// left for the watchdog.
+sender.track = pageMicTrack;
+watchdog();
+await flush();
+assert.equal(sender.track, translatedTrack, "a sender that drifted back to the app's microphone must be restored");
 
 window.dispatchEvent(new FakeEvent("live-voice:original-track", { detail: { elementId: "original-output" } }));
 await flush();
@@ -133,16 +186,54 @@ window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode:
 await flush();
 assert.equal(sender.track, translatedTrack, "unmuting must return to the translated audio without a reconnect");
 
-// With no usable capture left, the page's own track is the fallback and must be
-// re-enabled on the way out.
+// With no usable capture left, the page's own track is the fallback. It must be the
+// most recent one the page installed — restoring the track it already swapped away
+// from would send a dead microphone — and it must be re-enabled on the way out.
 capturedMicTrack.stop();
+pageMicTrack.enabled = false;
 window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "original" } }));
 await flush();
-assert.equal(sender.track, originalTrack, "without a live capture the page's own microphone must be restored");
-assert.equal(originalTrack.enabled, true, "a disabled fallback track must be re-enabled before it is sent");
+assert.equal(sender.track, pageMicTrack, "the fallback must restore the microphone the page installed most recently");
+assert.equal(pageMicTrack.enabled, true, "a disabled fallback track must be re-enabled before it is sent");
 
 window.dispatchEvent(new FakeEvent("live-voice:deactivate"));
 await flush();
-assert.equal(sender.track, originalTrack, "stopping translation must restore the user's microphone");
+assert.equal(sender.track, pageMicTrack, "stopping translation must restore the user's microphone");
+
+// On the apps that already route correctly the bridge must behave exactly as before:
+// no sender patch, no watchdog. Fresh classes so the patches above cannot leak in.
+class PlainSender { constructor(track) { this.track = track; } }
+PlainSender.prototype.replaceTrack = async function replaceTrack(track) { this.track = track; };
+class PlainPeerConnection {
+  constructor() { this.senders = []; }
+  addTrack(track) { const s = new PlainSender(track); this.senders.push(s); return s; }
+  addTransceiver() { const s = new PlainSender(null); this.senders.push(s); return { sender: s }; }
+  getSenders() { return this.senders; }
+  close() {}
+}
+const pristineReplaceTrack = PlainSender.prototype.replaceTrack;
+const pristineAddTrack = PlainPeerConnection.prototype.addTrack;
+let meetWatchdogInstalled = false;
+const meetWindow = {
+  location: { hostname: "meet.google.com" },
+  RTCPeerConnection: PlainPeerConnection,
+  RTCRtpSender: PlainSender,
+  AudioContext: window.AudioContext,
+  MediaStream: window.MediaStream,
+  addEventListener() {},
+  dispatchEvent() {}
+};
+vm.runInNewContext(mainSource, {
+  window: meetWindow,
+  document,
+  CustomEvent: FakeEvent,
+  MediaStream: meetWindow.MediaStream,
+  setInterval: () => { meetWatchdogInstalled = true; return 0; },
+  URL,
+  console
+});
+assert.equal(PlainSender.prototype.replaceTrack, pristineReplaceTrack, "outside Discord the sender prototype must be left alone");
+assert.equal(meetWatchdogInstalled, false, "outside Discord no routing watchdog may run");
+assert.notEqual(PlainPeerConnection.prototype.addTrack, pristineAddTrack, "the shared track hooks must still be installed everywhere");
 
 console.log("conference WebRTC replacement test: OK");
