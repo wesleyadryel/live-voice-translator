@@ -11,7 +11,7 @@ const elements = {
   transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
   sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"),
   muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), addOutgoingMonitor: $("#add-outgoing-monitor"), muteOutgoing: $("#mute-outgoing"),
-  muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), muteIncoming: $("#mute-incoming")
+  muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), addIncomingReturn: $("#add-incoming-return"), muteIncoming: $("#mute-incoming")
 };
 
 const routeLabels = {
@@ -35,7 +35,7 @@ let activeTabUrl = "";
 let outgoingRouteStatus = null;
 let liveTranscript = [];
 let transcriptSignature = "";
-const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMonitorOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingMuted"];
+const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMonitorOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingReturnOn", "incomingMuted"];
 let mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, false]));
 
 const MODE_HINTS = { translation: "translationHint", notes: "notesHint", both: "bothHint", transcript: "transcriptHint" };
@@ -196,7 +196,9 @@ function renderMuteControls() {
     outgoingMonitorOn: !outgoingTranslationAudible,
     incomingInterpreterOff: mutes.incomingMuted,
     incomingTranslationMuted: mutes.incomingMuted || mutes.incomingInterpreterOff,
-    incomingOriginalOn: mutes.incomingMuted || forced.incomingOriginalOn
+    incomingOriginalOn: mutes.incomingMuted || forced.incomingOriginalOn,
+    // Nothing is being translated for you, so there is no translation to send back.
+    incomingReturnOn: mutes.incomingInterpreterOff || mutes.incomingMuted
   };
   for (const [button, key, offKey, onKey] of [
     [elements.muteOutgoingInterpreter, "outgoingInterpreterOff", "muteOutgoingInterpreter", "unmuteOutgoingInterpreter"],
@@ -207,6 +209,7 @@ function renderMuteControls() {
     [elements.muteIncomingInterpreter, "incomingInterpreterOff", "muteIncomingInterpreter", "unmuteIncomingInterpreter"],
     [elements.muteIncomingTranslation, "incomingTranslationMuted", "muteIncomingTranslation", "unmuteIncomingTranslation"],
     [elements.addIncomingOriginal, "incomingOriginalOn", "addIncomingOriginal", "removeIncomingOriginal"],
+    [elements.addIncomingReturn, "incomingReturnOn", "enableIncomingReturn", "disableIncomingReturn"],
     [elements.muteIncoming, "incomingMuted", "muteIncoming", "unmuteIncoming"]
   ]) {
     const pressed = mutes[key] || Boolean(forced[key]);
@@ -438,6 +441,7 @@ for (const [button, key] of [
   [elements.muteIncomingInterpreter, "incomingInterpreterOff"],
   [elements.muteIncomingTranslation, "incomingTranslationMuted"],
   [elements.addIncomingOriginal, "incomingOriginalOn"],
+  [elements.addIncomingReturn, "incomingReturnOn"],
   [elements.muteIncoming, "incomingMuted"]
 ]) {
   button.addEventListener("click", () => { toggleMute(key).catch(() => refresh()); });

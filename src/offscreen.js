@@ -29,6 +29,8 @@ let outgoingOriginalOn = false;
 let incomingOriginalOn = false;
 let outgoingMonitorOn = false;
 let monitorFeedPc = null;
+let incomingReturnOn = false;
+let returnFeedPc = null;
 let sessionUsage = { inputTokens: 0, outputTokens: 0, inputAudioTokens: 0, outputAudioTokens: 0, cachedTokens: 0 };
 let usageFlushTimer = null;
 const pendingBuckets = new Map();
@@ -115,6 +117,52 @@ async function acceptMonitorFeed(sdp) {
     });
   }
   return pc.localDescription.sdp;
+}
+
+// Sends the participant's own translated voice back to them, so they hear how what
+// they said came out in your language. The audio exists here, the sender lives in
+// the conference tab, so it travels the same local loopback the monitor uses — in
+// the opposite direction.
+function stopReturnFeed() {
+  returnFeedPc?.close();
+  returnFeedPc = null;
+  chrome.runtime.sendMessage({ type: "RETURN_FEED_STOP" }).catch(() => {});
+}
+
+async function startReturnFeed() {
+  const stream = incomingOutput.srcObject;
+  if (returnFeedPc || !stream?.getAudioTracks?.().length) return;
+  const pc = new RTCPeerConnection();
+  returnFeedPc = pc;
+  try {
+    for (const track of stream.getAudioTracks()) pc.addTrack(track, stream);
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIceGathering(pc);
+    const result = await chrome.runtime.sendMessage({ type: "RETURN_FEED_OFFER", sdp: pc.localDescription.sdp });
+    if (!result?.ok || !result.answerSdp) throw new Error(result?.error || "RETURN_FEED_FAILED");
+    if (returnFeedPc !== pc) return;
+    await pc.setRemoteDescription({ type: "answer", sdp: result.answerSdp });
+  } catch (error) {
+    if (returnFeedPc === pc) stopReturnFeed();
+  }
+}
+
+function applyReturnFeed() {
+  if (incomingReturnOn && state.active) startReturnFeed().catch(() => {});
+  else stopReturnFeed();
+}
+
+function waitForIceGathering(pc) {
+  if (pc.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      if (pc.iceGatheringState !== "complete") return;
+      pc.removeEventListener("icegatheringstatechange", done);
+      resolve();
+    };
+    pc.addEventListener("icegatheringstatechange", done);
+    setTimeout(resolve, 1500);
+  });
 }
 
 async function releasePassthroughs() {
@@ -389,6 +437,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   generation += 1;
   reconnecting = false;
   stopMonitorFeed();
+  stopReturnFeed();
   releaseSpeechGates();
   await releasePassthroughs();
   clearLifecycleTimers();
@@ -475,6 +524,9 @@ function translatorOptions(settings, mode, outgoing) {
       addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant");
     },
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
+    // The participant's translated voice only exists once its track arrives, and a
+    // reconnect delivers a new one, so the return feed is rebuilt here.
+    onOutputTrack: () => { if (!outgoing) { stopReturnFeed(); applyReturnFeed(); } },
     onUsage: (usage) => recordUsage(usage),
     onDisconnect: () => scheduleReconnect(settings, mode)
   };
@@ -624,6 +676,7 @@ async function start(suppliedSettings = {}) {
     outgoingOriginalOn = Boolean(settings.outgoingOriginalOn);
     incomingOriginalOn = Boolean(settings.incomingOriginalOn);
     outgoingMonitorOn = Boolean(settings.outgoingMonitorOn);
+    incomingReturnOn = Boolean(settings.incomingReturnOn);
     applyMuteState();
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
     generation += 1;
@@ -681,7 +734,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (typeof message.outgoingOriginalOn === "boolean") outgoingOriginalOn = message.outgoingOriginalOn;
     if (typeof message.incomingOriginalOn === "boolean") incomingOriginalOn = message.incomingOriginalOn;
     if (typeof message.outgoingMonitorOn === "boolean") outgoingMonitorOn = message.outgoingMonitorOn;
+    if (typeof message.incomingReturnOn === "boolean") incomingReturnOn = message.incomingReturnOn;
     applyMuteState();
+    applyReturnFeed();
     applyInterpreterState()
       .then(() => sendResponse({ ok: true, state: statusState() }))
       .catch((error) => sendResponse({ ok: false, error: error.message, state: statusState() }));

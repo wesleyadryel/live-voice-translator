@@ -15,6 +15,8 @@ let interpreterOff = false;
 let originalOn = false;
 let monitorOn = false;
 let monitorPc = null;
+let returnPc = null;
+let returnElement = null;
 let speechGate = null;
 let idleTimer = null;
 let idleParked = false;
@@ -173,6 +175,7 @@ async function exchangeSdp(sdp) {
 async function stopOutgoing({ restore = true } = {}) {
   releaseSpeechGate();
   stopMonitorFeed();
+  stopReturnFeed();
   translator?.close();
   translator = null;
   microphoneStream?.getTracks().forEach((track) => track.stop());
@@ -248,7 +251,44 @@ async function startOutgoing(settings) {
   }
 }
 
+// Receives the participant's own translated voice from the offscreen document and
+// hands it to the bridge, which folds it into what the sender transmits. Muted
+// locally: this audio is for them, not for you.
+const RETURN_ELEMENT_ID = "live-voice-return-output";
+
+function stopReturnFeed() {
+  returnPc?.close();
+  returnPc = null;
+  returnElement?.remove();
+  returnElement = null;
+  dispatch("live-voice:return-track", { elementId: null });
+}
+
+async function acceptReturnFeed(sdp) {
+  stopReturnFeed();
+  const pc = new RTCPeerConnection();
+  returnPc = pc;
+  pc.ontrack = (event) => {
+    const audio = document.createElement("audio");
+    audio.id = RETURN_ELEMENT_ID;
+    audio.autoplay = true;
+    audio.muted = true;
+    audio.hidden = true;
+    audio.srcObject = event.streams[0];
+    (document.documentElement || document.body).append(audio);
+    returnElement?.remove();
+    returnElement = audio;
+    dispatch("live-voice:return-track", { elementId: RETURN_ELEMENT_ID });
+  };
+  await pc.setRemoteDescription({ type: "offer", sdp });
+  await pc.setLocalDescription(await pc.createAnswer());
+  await waitForIceGathering(pc);
+  return { ok: true, answerSdp: pc.localDescription.sdp };
+}
+
 export async function handleConferenceMessage(message) {
+  if (message.type === "CONFERENCE_RETURN_OFFER") return acceptReturnFeed(message.sdp);
+  if (message.type === "CONFERENCE_RETURN_STOP") { stopReturnFeed(); return { ok: true }; }
   if (message.type === "CONFERENCE_START_OUTGOING") return startOutgoing(message.settings || {});
   if (message.type === "CONFERENCE_STOP_OUTGOING") return stopOutgoing();
   if (message.type === "CONFERENCE_SET_MUTE") {

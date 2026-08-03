@@ -10,6 +10,7 @@
   let replacementTrack = null;
   let translatedTrack = null;
   let originalMicTrack = null;
+  let returnTrack = null;
   // translated: the participant hears the interpreter.
   // original: the participant hears the untranslated voice from this page's own mic.
   // both: the participant hears the original voice and the interpreter together.
@@ -25,7 +26,7 @@
   }
 
   function isBridgeTrack(track) {
-    return Boolean(track) && (track === translatedTrack || track === originalMicTrack || track === silenceTrack || track === mixTrack);
+    return Boolean(track) && (track === translatedTrack || track === originalMicTrack || track === silenceTrack || track === mixTrack || track === returnTrack);
   }
 
   function remember(sender, track = sender?.track) {
@@ -105,25 +106,37 @@
     return originalMicTrack;
   }
 
+  // The participant's own translated voice, sent back so they hear how what they
+  // said came out. It rides along with whatever else is going out.
+  function liveReturnTrack() {
+    return returnTrack?.readyState === "live" ? returnTrack : null;
+  }
+
+  async function withReturn(tracks, status) {
+    const extra = liveReturnTrack();
+    const all = extra ? [...tracks, extra] : tracks;
+    if (all.length > 1) return applyReplacement(buildMixTrack(all), status);
+    if (all.length === 1) return applyReplacement(all[0], status);
+    return applyReplacement(ensureSilenceTrack());
+  }
+
   async function applyOutgoingMode() {
     if (!active) return;
+    // Silence means silence: muting everything outgoing also holds back the return.
     if (outgoingMode === "silence") return applyReplacement(ensureSilenceTrack());
     if (outgoingMode === "both") {
       const tracks = [liveOriginalTrack(), translatedTrack?.readyState === "live" ? translatedTrack : null].filter(Boolean);
-      if (tracks.length > 1) return applyReplacement(buildMixTrack(tracks), "both");
-      // Only one voice is available yet; send it alone rather than nothing.
-      if (tracks.length === 1) return applyReplacement(tracks[0], tracks[0] === translatedTrack ? "routed" : "original");
-      return applyReplacement(ensureSilenceTrack());
+      return withReturn(tracks, "both");
     }
     if (outgoingMode === "original") {
       // Prefer the extension's own live capture: it is known good, because the
       // interpreter is listening through it right now.
       const original = liveOriginalTrack();
-      if (original) return applyReplacement(original, "original");
+      if (original) return withReturn([original], "original");
+      if (liveReturnTrack()) return withReturn([], "original");
       return applyOriginalTracks();
     }
-    if (!translatedTrack) return applyReplacement(ensureSilenceTrack());
-    return applyReplacement(translatedTrack);
+    return withReturn(translatedTrack?.readyState === "live" ? [translatedTrack] : [], "routed");
   }
 
   async function setOutgoingMode(mode) {
@@ -162,6 +175,7 @@
     replacementTrack = null;
     translatedTrack = null;
     originalMicTrack = null;
+    returnTrack = null;
     outgoingMode = "translated";
     const restores = [];
     for (const [sender, track] of originalTracks) {
@@ -272,6 +286,10 @@
   window.addEventListener("live-voice:activate", () => activate().catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:translated-track", (event) => useTranslatedTrack(event.detail?.elementId).catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:original-track", (event) => useOriginalTrack(event.detail?.elementId).catch((error) => report("error", error.message)));
+  window.addEventListener("live-voice:return-track", (event) => {
+    returnTrack = event.detail?.elementId ? trackFromElement(event.detail.elementId) : null;
+    applyOutgoingMode().catch((error) => report("error", error.message));
+  });
   window.addEventListener("live-voice:outgoing-mode", (event) => setOutgoingMode(event.detail?.mode).catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:deactivate", () => deactivate().catch((error) => report("error", error.message)));
   window.__liveVoiceWebRtcBridge = { peerConnections, originalTracks };

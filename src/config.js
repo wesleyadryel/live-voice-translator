@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS = {
   outgoingOriginalOn: false,
   incomingOriginalOn: false,
   outgoingMonitorOn: false,
+  incomingReturnOn: false,
   // Seconds of silence before a direction's realtime session is closed to stop
   // paying for streamed silence. 0 keeps every session open for the whole call.
   autoPauseSeconds: 5,

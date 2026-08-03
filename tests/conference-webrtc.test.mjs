@@ -80,10 +80,12 @@ class FakePeerConnection {
 const listeners = new Map();
 const translatedTrack = new FakeTrack("translated");
 const capturedMicTrack = new FakeTrack("mic-capture");
+const returnTrack = new FakeTrack("their-translation");
 const document = {
   getElementById(id) {
     if (id === "translated-output") return { srcObject: { getAudioTracks: () => [translatedTrack] } };
     if (id === "original-output") return { srcObject: { getAudioTracks: () => [capturedMicTrack] } };
+    if (id === "return-output") return { srcObject: { getAudioTracks: () => [returnTrack] } };
     return null;
   }
 };
@@ -176,6 +178,23 @@ assert.equal(lateSender.track, capturedMicTrack, "a sender added while sending t
 window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "both" } }));
 await flush();
 assert.deepEqual(sender.track.mixed, [capturedMicTrack, translatedTrack], "sending both voices must mix the capture and the interpreter into one track");
+
+// The participant's own translated voice is sent back so they hear how it came
+// out; it rides along with whatever else is going out.
+window.dispatchEvent(new FakeEvent("live-voice:return-track", { detail: { elementId: "return-output" } }));
+await flush();
+assert.deepEqual(sender.track.mixed, [capturedMicTrack, translatedTrack, returnTrack], "the return feed must be mixed into what is already sent");
+
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "translated" } }));
+await flush();
+assert.deepEqual(sender.track.mixed, [translatedTrack, returnTrack], "the return feed must ride along in plain translated mode too");
+
+window.dispatchEvent(new FakeEvent("live-voice:return-track", { detail: { elementId: null } }));
+await flush();
+assert.equal(sender.track, translatedTrack, "dropping the return feed must leave the translation alone");
+
+window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "both" } }));
+await flush();
 
 window.dispatchEvent(new FakeEvent("live-voice:outgoing-mode", { detail: { mode: "silence" } }));
 await flush();

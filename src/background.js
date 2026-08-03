@@ -157,6 +157,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  // Offscreen holds the participant's translated voice; the sender that can deliver
+  // it back to them lives in the conference tab.
+  if (message.type === "RETURN_FEED_OFFER") {
+    (async () => {
+      if (!activeConferenceTabId) throw new Error("CONFERENCE_SESSION_NOT_ACTIVE");
+      sendResponse(await chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_RETURN_OFFER", sdp: message.sdp }));
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "RETURN_FEED_STOP") {
+    if (activeConferenceTabId) chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_RETURN_STOP" }).catch(() => {});
+    return false;
+  }
+
   if (message.type === "CONFERENCE_USAGE") {
     if (sender.tab?.id !== activeConferenceTabId) return false;
     chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_USAGE", usage: message.usage }).catch(() => {});
@@ -263,7 +278,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           outgoingTranslationMuted: message.outgoingTranslationMuted,
           outgoingInterpreterOff: message.outgoingInterpreterOff,
           outgoingOriginalOn: message.outgoingOriginalOn,
-          outgoingMonitorOn: message.outgoingMonitorOn
+          outgoingMonitorOn: message.outgoingMonitorOn,
+          incomingReturnOn: message.incomingReturnOn
         }).catch(() => {});
       }
       sendResponse(await chrome.runtime.sendMessage({
@@ -277,7 +293,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         incomingMuted: message.incomingMuted,
         incomingTranslationMuted: message.incomingTranslationMuted,
         incomingInterpreterOff: message.incomingInterpreterOff,
-        incomingOriginalOn: message.incomingOriginalOn
+        incomingOriginalOn: message.incomingOriginalOn,
+        incomingReturnOn: message.incomingReturnOn
       }));
     })().catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
