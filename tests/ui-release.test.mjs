@@ -108,6 +108,17 @@ assert.match(optionsCss, /\.options-shell \.compact-settings-form > section \{/,
 
 // Usage must come from what the API reports, not from elapsed time.
 assert.match(realtimeJs, /event\.response\?\.usage/, "token usage must be read from the API's own report");
+// The realtime model drives nearly all cost, so it must be choosable and its
+// usage attributable — shown as the official model id, not a marketing label.
+assert.equal(/const REALTIME_MODEL = "/.test(realtimeJs) || /const REALTIME_MODEL = "/.test(backgroundJs), false, "the realtime model must not be hardcoded");
+assert.match(options, /<select id="realtime-model">/, "the translation model must be a normal select");
+assert.match(options, />gpt-realtime-1\.5</, "the select must show the official model id");
+assert.match(realtimeJs, /translations\/calls/, "translate models must use the dedicated translations endpoint");
+assert.match(realtimeJs, /output:\s*\{\s*language:/, "translate sessions must set the target language code");
+assert.match(realtimeJs, /this\.onUsage\(\{[\s\S]{0,200}?model: this\.sessionModel\(\)/, "usage must say which model produced it");
+assert.match(offscreenJs, /pendingModels\.set\(model, perModel\)/, "usage must accumulate per model for comparison");
+assert.match(usageJs, /average: total \/ \(Number\(entry\.responses\) \|\| 1\)/, "models must be compared per response, not by raw total");
+assert.match(options, /id="realtime-model"/, "the translation model must be selectable in settings");
 // The note-only modes mute the reply, so asking for audio bought the most
 // expensive tokens available and discarded them.
 assert.match(realtimeJs, /output_modalities: this\.verbatim \? \["text"\] : \["audio"\]/, "modes that never play a reply must not request audio output");

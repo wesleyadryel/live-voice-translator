@@ -181,3 +181,18 @@
   .usage-card strong { font-size: 23px; }
   .usage-scale { width: 28px; }
 }
+
+.usage-models[hidden] { display: none; }
+.usage-models > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.usage-models > header strong { font-size: 12.5px; font-weight: 700; }
+.usage-models > header span { color: var(--secondary); font-size: 11px; }
+.usage-model-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.usage-model-table th, .usage-model-table td { padding: 8px 6px; text-align: right; }
+.usage-model-table thead th { color: var(--tertiary); font-size: 9.5px; font-weight: 680; letter-spacing: .06em; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+.usage-model-table th:first-child, .usage-model-table thead th:first-child { text-align: left; }
+.usage-model-table tbody th { color: var(--text); font-weight: 650; overflow-wrap: anywhere; }
+.usage-model-table tbody td { color: var(--secondary); }
+.usage-model-table tbody tr + tr th, .usage-model-table tbody tr + tr td { border-top: 1px solid var(--line); }
+/* The lightest model per response is the one worth switching to. */
+.usage-model-table tbody tr.is-cheapest th { color: var(--success); }
+.usage-model-table tbody tr.is-cheapest td:nth-child(3) { color: var(--success); font-weight: 680; }

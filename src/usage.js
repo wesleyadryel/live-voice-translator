@@ -192,8 +192,37 @@ function wireGroup(id, apply) {
   });
 }
 
+// Comparing models is only meaningful per response: one model answering twice as
+// often would otherwise look twice as expensive.
+function renderModels(usageModels) {
+  const section = document.querySelector("#usage-models");
+  const rows = Object.entries(usageModels).filter(([, entry]) => Number(entry?.responses) > 0);
+  section.hidden = rows.length === 0;
+  if (!rows.length) return;
+
+  const measured = rows.map(([model, entry]) => {
+    const values = entry.values || [];
+    const total = (Number(values[0]) || 0) + (Number(values[1]) || 0);
+    return { model, responses: Number(entry.responses) || 0, total, average: total / (Number(entry.responses) || 1) };
+  }).sort((a, b) => b.total - a.total);
+  const cheapest = Math.min(...measured.map((item) => item.average));
+
+  document.querySelector("#usage-model-rows").replaceChildren(...measured.map((item) => {
+    const row = document.createElement("tr");
+    const cells = [item.model, String(item.responses), formatTokens(item.average), formatTokens(item.total)];
+    row.append(...cells.map((value, index) => {
+      const cell = document.createElement(index === 0 ? "th" : "td");
+      cell.textContent = value;
+      return cell;
+    }));
+    // The lightest model per response is worth pointing at directly.
+    if (measured.length > 1 && item.average === cheapest) row.classList.add("is-cheapest");
+    return row;
+  }));
+}
+
 async function load() {
-  const stored = await chrome.storage.local.get({ usageBuckets: {}, usageDaily: {}, interfaceLanguage: "en", sessionCount: 0 });
+  const stored = await chrome.storage.local.get({ usageBuckets: {}, usageDaily: {}, usageModels: {}, interfaceLanguage: "en", sessionCount: 0 });
   locale = stored.interfaceLanguage || "en";
   localizePage(locale);
   document.title = `${t(locale, "tokenUsage")} — ${t(locale, "appTitle")}`;
@@ -209,6 +238,7 @@ async function load() {
 
   const empty = document.querySelector("#usage-empty");
   empty.textContent = t(locale, buckets.size === 0 && stored.sessionCount > 0 ? "usageNotReported" : "noUsageYet");
+  renderModels(stored.usageModels || {});
   draw();
 }
 
@@ -270,7 +300,7 @@ legend.addEventListener("click", (domEvent) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes.usageBuckets || changes.usageDaily)) load();
+  if (area === "local" && (changes.usageBuckets || changes.usageDaily || changes.usageModels)) load();
 });
 
 load();

@@ -57,6 +57,14 @@
       <div class="usage-axis" id="usage-axis"></div>
       <p class="usage-empty" id="usage-empty" data-i18n="noUsageYet">Nothing recorded yet. Usage is written when a session stops.</p>
     </section>
+
+    <section class="usage-graph-card usage-models" id="usage-models" hidden>
+      <header><strong data-i18n="byModel">By model</strong><span data-i18n="byModelHelp">Average cost of one translated response</span></header>
+      <table class="usage-model-table">
+        <thead><tr><th data-i18n="modelName">Model</th><th data-i18n="responses">Responses</th><th data-i18n="avgPerResponse">Avg / response</th><th data-i18n="totalTokens">Total tokens</th></tr></thead>
+        <tbody id="usage-model-rows"></tbody>
+      </table>
+    </section>
   </main>
   <script type="module" src="usage.js"></script>
 </body>

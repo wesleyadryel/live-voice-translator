@@ -4,8 +4,12 @@ let offscreenCreating;
 let lastCaptureError = "";
 let activeConferenceTabId = null;
 
-const REALTIME_MODEL = "gpt-realtime-1.5";
-const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
+import { DEFAULT_REALTIME_MODEL, realtimeUrl } from "./realtime.js";
+
+async function currentRealtimeModel() {
+  const { realtimeModel = DEFAULT_REALTIME_MODEL } = await chrome.storage.local.get({ realtimeModel: DEFAULT_REALTIME_MODEL });
+  return realtimeModel || DEFAULT_REALTIME_MODEL;
+}
 
 function isSupportedConferenceUrl(url = "") {
   try {
@@ -131,7 +135,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (typeof message.sdp !== "string" || !message.sdp.startsWith("v=0")) throw new Error("INVALID_REALTIME_SDP");
       const { apiKey = "" } = await chrome.storage.local.get({ apiKey: "" });
       if (!apiKey) throw new Error("API_KEY_MISSING");
-      const response = await fetch(REALTIME_URL, {
+      const response = await fetch(realtimeUrl(await currentRealtimeModel()), {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/sdp" },
         body: message.sdp
@@ -190,6 +194,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  // The list comes from the account itself, so it reflects the models actually
+  // available rather than a hardcoded guess that ages badly.
+  if (message.type === "LIST_REALTIME_MODELS") {
+    (async () => {
+      const { apiKey = "" } = await chrome.storage.local.get({ apiKey: "" });
+      if (!apiKey) throw new Error("API_KEY_MISSING");
+      const response = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
+      if (!response.ok) throw new Error(`OpenAI ${response.status}`);
+      const models = ((await response.json())?.data || [])
+        .map((item) => item.id)
+        .filter((id) => /realtime/i.test(id))
+        .sort();
+      sendResponse({ ok: true, models });
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (message.type === "TEST_OLLAMA") {
     (async () => {
       const base = String(message.url || "").replace(/\/+$/, "");
@@ -209,7 +230,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       const { apiKey = "", interfaceLanguage = "en" } = await chrome.storage.local.get({ apiKey: "", interfaceLanguage: "en" });
       if (!apiKey) throw new Error(t(interfaceLanguage, "apiKeyMissing"));
-      const response = await fetch("https://api.openai.com/v1/models/gpt-realtime-1.5", {
+      const response = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(await currentRealtimeModel())}`, {
         headers: { Authorization: `Bearer ${apiKey}` }
       });
       if (!response.ok) throw new Error(`OpenAI ${response.status}: ${await response.text()}`);
@@ -244,7 +265,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             outgoingInterpreterOff: Boolean(settings.outgoingInterpreterOff),
             outgoingOriginalOn: Boolean(settings.outgoingOriginalOn),
             outgoingMonitorOn: Boolean(settings.outgoingMonitorOn),
-            autoPauseSeconds: settings.autoPauseSeconds
+            autoPauseSeconds: settings.autoPauseSeconds,
+            realtimeModel: settings.realtimeModel
           }
         });
         if (!outgoing?.ok) throw new Error(outgoing?.error || "CONFERENCE_WEBRTC_ROUTE_FAILED");

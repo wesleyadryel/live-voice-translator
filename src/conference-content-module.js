@@ -192,6 +192,7 @@ async function stopOutgoing({ restore = true } = {}) {
 
 function createTranslator(settings, audio) {
   return new RealtimeTranslator({
+    model: settings.realtimeModel,
     inputStream: microphoneStream,
     outputElement: audio,
     from: settings.sourceLanguage,

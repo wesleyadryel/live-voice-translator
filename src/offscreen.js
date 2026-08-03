@@ -34,6 +34,7 @@ let returnFeedPc = null;
 let sessionUsage = { inputTokens: 0, outputTokens: 0, inputAudioTokens: 0, outputAudioTokens: 0, cachedTokens: 0 };
 let usageFlushTimer = null;
 const pendingBuckets = new Map();
+const pendingModels = new Map();
 const speechGates = new Map();
 const idleTimers = new Map();
 const idleParked = new Set();
@@ -481,6 +482,13 @@ const USAGE_RETENTION_MINUTES = 90 * 24 * 60;
 // are written, so an hour of talking costs 60 small rows.
 function recordUsage(usage) {
   for (const key of USAGE_FIELDS) sessionUsage[key] += Number(usage[key]) || 0;
+  // Kept per model as well, so two models can be compared on what they actually
+  // cost per response rather than on a guess.
+  const model = usage.model || activeSettings.realtimeModel || "gpt-realtime-1.5";
+  const perModel = pendingModels.get(model) || { responses: 0, values: USAGE_FIELDS.map(() => 0) };
+  perModel.responses += 1;
+  USAGE_FIELDS.forEach((key, index) => { perModel.values[index] += Number(usage[key]) || 0; });
+  pendingModels.set(model, perModel);
   const minute = String(Math.floor(Date.now() / 60000));
   const bucket = pendingBuckets.get(minute) || USAGE_FIELDS.map(() => 0);
   USAGE_FIELDS.forEach((key, index) => { bucket[index] += Number(usage[key]) || 0; });
@@ -494,13 +502,22 @@ function recordUsage(usage) {
 async function persistUsage() {
   clearTimeout(usageFlushTimer);
   usageFlushTimer = null;
-  if (!pendingBuckets.size) return;
-  const { usageBuckets = {} } = await storageGet({ usageBuckets: {} });
+  if (!pendingBuckets.size && !pendingModels.size) return;
+  const { usageBuckets = {}, usageModels = {} } = await storageGet({ usageBuckets: {}, usageModels: {} });
   for (const [minute, values] of pendingBuckets) {
     const previous = usageBuckets[minute] || USAGE_FIELDS.map(() => 0);
     usageBuckets[minute] = values.map((value, index) => (Number(previous[index]) || 0) + value);
   }
+  for (const [model, entry] of pendingModels) {
+    const previous = usageModels[model] || { responses: 0, values: USAGE_FIELDS.map(() => 0) };
+    usageModels[model] = {
+      responses: (Number(previous.responses) || 0) + entry.responses,
+      values: entry.values.map((value, index) => (Number(previous.values?.[index]) || 0) + value)
+    };
+  }
   pendingBuckets.clear();
+  pendingModels.clear();
+  await storageSet({ usageModels });
   const oldest = Math.floor(Date.now() / 60000) - USAGE_RETENTION_MINUTES;
   const kept = Object.entries(usageBuckets).filter(([minute]) => Number(minute) >= oldest);
   await storageSet({ usageBuckets: Object.fromEntries(kept) });
@@ -511,6 +528,7 @@ function translatorOptions(settings, mode, outgoing) {
   const forwards = outgoing || mediaCapture;
   return {
     apiKey: settings.apiKey,
+    model: settings.realtimeModel,
     inputStream: outgoing ? microphoneStream : tabStream,
     outputElement: outgoing ? outgoingOutput : incomingOutput,
     monitorElement: outgoing ? outgoingMonitor : null,

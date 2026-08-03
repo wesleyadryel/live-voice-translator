@@ -44,11 +44,21 @@ async function init() {
   ids("monitor-level").value = settings.monitorLevel;
   ids("max-session-minutes").value = String(settings.maxSessionMinutes || 90);
   ids("auto-pause-seconds").value = String(settings.autoPauseSeconds ?? DEFAULT_SETTINGS.autoPauseSeconds);
+  ensureRealtimeModelOption(settings.realtimeModel || DEFAULT_SETTINGS.realtimeModel);
   ids("summary-provider").value = settings.summaryProvider || "openai";
   ids("ollama-url").value = settings.ollamaUrl || "";
   ids("ollama-model").value = settings.ollamaModel || "";
   applySummaryProvider();
   await listOutputs(settings.outgoingDeviceId, settings.incomingDeviceId);
+}
+
+function ensureRealtimeModelOption(model) {
+  const select = ids("realtime-model");
+  const value = model || DEFAULT_SETTINGS.realtimeModel;
+  if (![...select.options].some((option) => option.value === value)) {
+    select.append(new Option(value, value));
+  }
+  select.value = value;
 }
 
 function applySummaryProvider() {
@@ -143,6 +153,7 @@ ids("settings-form").addEventListener("submit", async (event) => {
     retentionDays: 30,
     maxSessionMinutes: Number(ids("max-session-minutes").value),
     autoPauseSeconds: Number(ids("auto-pause-seconds").value),
+    realtimeModel: ids("realtime-model").value || DEFAULT_SETTINGS.realtimeModel,
     summaryProvider: ids("summary-provider").value,
     ollamaUrl: ids("ollama-url").value.trim() || DEFAULT_SETTINGS.ollamaUrl,
     ollamaModel: ids("ollama-model").value.trim() || DEFAULT_SETTINGS.ollamaModel

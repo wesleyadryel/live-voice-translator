@@ -49,6 +49,10 @@
           <label><span data-i18n="autoPause">Pause when silent</span><select id="auto-pause-seconds"><option value="0" data-i18n="autoPauseOff">Never pause</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="45">45 s</option></select></label>
           <label><span data-i18n="summaryProvider">Notes are written by</span><select id="summary-provider"><option value="openai" data-i18n="providerOpenAI">OpenAI</option><option value="ollama" data-i18n="providerOllama">Ollama (local)</option></select></label>
         </div>
+        <div class="notes-controls">
+          <label><span data-i18n="realtimeModel">Translation model</span><select id="realtime-model"><option value="gpt-realtime-1.5">gpt-realtime-1.5</option><option value="gpt-realtime-2">gpt-realtime-2</option><option value="gpt-realtime-2.1">gpt-realtime-2.1</option><option value="gpt-realtime-2.1-mini">gpt-realtime-2.1-mini</option><option value="gpt-realtime-mini">gpt-realtime-mini</option><option value="gpt-realtime-translate">gpt-realtime-translate</option></select></label>
+        </div>
+        <p class="field-help" data-i18n="realtimeModelHelp">This is the model that does the live dubbing and accounts for nearly all usage. Compare what each one costs per response on the Token usage page.</p>
         <p class="field-help" data-i18n="autoPauseHelp">A direction stops streaming audio to the API while nobody is talking, and reconnects on the first word. Saves most of a call's cost; the first phrase after a long pause can start slightly later.</p>
         <div class="notes-controls" id="ollama-fields" hidden>
           <label><span data-i18n="ollamaUrl">Ollama address</span><input id="ollama-url" type="url" placeholder="http://localhost:11434" spellcheck="false"></label>
