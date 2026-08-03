@@ -3,12 +3,14 @@ import { readFile } from "node:fs/promises";
 import { t } from "../src/i18n.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
+const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
   read("../src/popup.html"),
   read("../src/popup.js"),
   read("../src/offscreen.js"),
   read("../src/conference-content-module.js"),
   read("../src/realtime.js"),
+  read("../src/background.js"),
+  read("../src/history.js"),
   read("../src/options.html"),
   read("../src/history.html"),
   read("../src/release.css"),
@@ -65,7 +67,20 @@ assert.match(contentModuleJs, /CONFERENCE_MONITOR_OFFER/, "the return feed must 
 assert.match(offscreenJs, /acceptMonitorFeed/, "the offscreen document must play the return feed, out of tabCapture's reach");
 assert.match(offscreenJs, /outgoingMonitor\.muted = !outgoingTranslationAudible \|\| !outgoingMonitorOn/, "the return feed must follow the panel switch and stop when nothing is being sent");
 assert.match(offscreenJs, /incomingTranslator\?\.close\(\);\s*\n\s*incomingTranslator = null;/, "switching the interpreter off must close its realtime session so no tokens are spent");
-assert.match(offscreenJs, /incomingTranslator = incomingInterpreterOff \? null :/, "a reconnect must not revive an interpreter the user switched off");
+assert.match(offscreenJs, /incomingTranslator = incomingInterpreterWanted\(\) \?/, "a reconnect must not revive an interpreter that is switched off or parked");
+assert.match(offscreenJs, /!incomingInterpreterOff && !idleParked\.has\("incoming"\)/, "an idle-parked direction must stay closed until its speaker talks again");
+assert.match(offscreenJs, /settings\.summaryProvider === "ollama"/, "meeting notes must be able to run on a local model");
+// Using the local model has to be verifiable, both before and after a meeting.
+assert.match(options, /id="test-ollama"/, "the local notes provider must be testable before relying on it");
+// A class-level `display` outranks the browser's [hidden] rule, so any row the
+// options page toggles from JS has to opt back in or it ignores `hidden` entirely.
+for (const [selector, id] of [[".api-test-control", "ollama-test-row"], [".notes-controls", "ollama-fields"], [".field-help", "ollama-help"]]) {
+  assert.ok(options.includes(`id="${id}"`), `${id} must exist to be toggled`);
+  assert.ok(optionsCss.includes(`${selector}[hidden] { display: none; }`), `${selector} must honour the hidden attribute`);
+}
+assert.match(backgroundJs, /TEST_OLLAMA/, "the test must reach Ollama and report whether the chosen model exists");
+assert.match(offscreenJs, /record\.summaryEngine = settings\.summaryProvider === "ollama"/, "each meeting must record which engine wrote its notes");
+assert.match(historyJs, /summaryEngineLabel/, "the history must show which engine wrote the notes");
 assert.match(contentModuleJs, /if \(interpreterOff\) return \{ ok: true \};/, "starting with the outgoing interpreter off must not open a realtime session");
 assert.equal(/(outgoing|incoming)Muted\)\s*(return|stop\()/.test(offscreenJs), false, "mute must never stop the session or the transcript");
 assert.match(popupJs, /saveSettings\(\{ \[key\]: mutes\[key\] \}\)/, "a mute chosen before starting must persist into the session");

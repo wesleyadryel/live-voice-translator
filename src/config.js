@@ -21,6 +21,12 @@ export const DEFAULT_SETTINGS = {
   outgoingOriginalOn: false,
   incomingOriginalOn: false,
   outgoingMonitorOn: false,
+  // Seconds of silence before a direction's realtime session is closed to stop
+  // paying for streamed silence. 0 keeps every session open for the whole call.
+  autoPauseSeconds: 10,
+  summaryProvider: "openai",
+  ollamaUrl: "http://localhost:11434",
+  ollamaModel: "llama3.1",
   summaryDetail: "standard",
   summarySections: {
     overview: true,

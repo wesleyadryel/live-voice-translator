@@ -46,6 +46,11 @@ call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
   interpreter off pauses that side's transcript
 - **Return feed**: hear the translated voice the participant is actually receiving,
   so you can tell how you are coming across
+- **Pays only for speech**: each direction closes its realtime session while nobody
+  is talking and reopens on the first word, instead of streaming silence for the
+  whole call
+- **Optional local notes**: meeting summaries can be written by Ollama on your own
+  machine. Live translation still needs OpenAI — Ollama does not process audio
 - **Structured meeting notes** with decisions, tasks, deadlines, and open questions
 - **Six interface languages**: English, Russian, Spanish, German, French, and Brazilian Portuguese
 - **Local-first history** with configurable retention and Markdown export

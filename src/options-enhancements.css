@@ -148,6 +148,9 @@
 }
 .api-meta-row .help { flex: 1 1 auto; max-width: 520px; margin: 0; }
 .api-test-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
+/* A class-level display beats the browser's [hidden] rule, so rows toggled from JS
+   need this or they stay on screen regardless. */
+.api-test-control[hidden] { display: none; }
 .api-section .api-test-button {
   display: inline-flex;
   align-items: center;
@@ -186,6 +189,7 @@
 .audio-section .help { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
 
 .notes-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.notes-controls[hidden] { display: none; }
 .notes-controls label { margin-top: 0; }
 .summary-options {
   display: grid;
@@ -292,3 +296,6 @@
   .api-section .api-test-button { width: 100%; }
   #api-test-status { white-space: normal; }
 }
+
+.field-help { margin: 2px 2px 0; color: var(--secondary); font-size: 11px; line-height: 1.45; }
+.field-help[hidden] { display: none; }

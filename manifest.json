@@ -14,6 +14,8 @@
   ],
   "host_permissions": [
     "https://api.openai.com/*",
+    "http://localhost:11434/*",
+    "http://127.0.0.1:11434/*",
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
     "https://telemost.yandex.ru/*",
@@ -37,7 +39,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/conference-content-module.js", "src/realtime.js"],
+      "resources": ["src/conference-content-module.js", "src/realtime.js", "src/speech-gate.js"],
       "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*", "https://*.discord.com/*"]
     }
   ],

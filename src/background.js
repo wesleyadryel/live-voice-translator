@@ -169,6 +169,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "TEST_OLLAMA") {
+    (async () => {
+      const base = String(message.url || "").replace(/\/+$/, "");
+      const response = await fetch(`${base}/api/tags`).catch(() => null);
+      if (!response) throw new Error("OLLAMA_UNREACHABLE");
+      if (!response.ok) throw new Error(`Ollama ${response.status}`);
+      const models = ((await response.json())?.models || []).map((item) => item.name);
+      // Ollama accepts "llama3.1" for a tag stored as "llama3.1:latest".
+      const wanted = String(message.model || "");
+      const installed = models.some((name) => name === wanted || name.split(":")[0] === wanted.split(":")[0]);
+      sendResponse({ ok: true, models, installed });
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (message.type === "TEST_API_KEY") {
     (async () => {
       const { apiKey = "", interfaceLanguage = "en" } = await chrome.storage.local.get({ apiKey: "", interfaceLanguage: "en" });
@@ -207,7 +222,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             outgoingTranslationMuted: Boolean(settings.outgoingTranslationMuted),
             outgoingInterpreterOff: Boolean(settings.outgoingInterpreterOff),
             outgoingOriginalOn: Boolean(settings.outgoingOriginalOn),
-            outgoingMonitorOn: Boolean(settings.outgoingMonitorOn)
+            outgoingMonitorOn: Boolean(settings.outgoingMonitorOn),
+            autoPauseSeconds: settings.autoPauseSeconds
           }
         });
         if (!outgoing?.ok) throw new Error(outgoing?.error || "CONFERENCE_WEBRTC_ROUTE_FAILED");

@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings } from "./config.js";
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "./config.js";
 import { localizePage, t } from "./i18n.js";
 
 const ids = (name) => document.querySelector(`#${name}`);
@@ -43,8 +43,49 @@ async function init() {
   ids("speaker-diarization").checked = settings.speakerDiarization !== false;
   ids("monitor-level").value = settings.monitorLevel;
   ids("max-session-minutes").value = String(settings.maxSessionMinutes || 90);
+  ids("auto-pause-seconds").value = String(settings.autoPauseSeconds ?? 10);
+  ids("summary-provider").value = settings.summaryProvider || "openai";
+  ids("ollama-url").value = settings.ollamaUrl || "";
+  ids("ollama-model").value = settings.ollamaModel || "";
+  applySummaryProvider();
   await listOutputs(settings.outgoingDeviceId, settings.incomingDeviceId);
 }
+
+function applySummaryProvider() {
+  const local = ids("summary-provider").value === "ollama";
+  ids("ollama-fields").hidden = !local;
+  ids("ollama-help").hidden = !local;
+  ids("ollama-test-row").hidden = !local;
+}
+
+ids("summary-provider").addEventListener("change", applySummaryProvider);
+
+ids("test-ollama").addEventListener("click", async () => {
+  const button = ids("test-ollama");
+  const status = ids("ollama-test-status");
+  const url = ids("ollama-url").value.trim() || DEFAULT_SETTINGS.ollamaUrl;
+  const model = ids("ollama-model").value.trim() || DEFAULT_SETTINGS.ollamaModel;
+  button.disabled = true;
+  status.dataset.state = "loading";
+  status.textContent = t(locale, "testing");
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "TEST_OLLAMA", url, model });
+    if (!result?.ok) throw new Error(result?.error === "OLLAMA_UNREACHABLE" ? t(locale, "ollamaUnreachable") : result?.error || t(locale, "checkFailed"));
+    // Offer what is actually installed, so a wrong name is corrected by picking
+    // from the field instead of being retyped from the error message.
+    ids("ollama-models").replaceChildren(...result.models.map((name) => new Option(name, name)));
+    // Reaching Ollama is not enough: a missing model only fails when a meeting ends.
+    status.dataset.state = result.installed ? "success" : "error";
+    status.textContent = result.installed
+      ? t(locale, "ollamaReady", { model })
+      : t(locale, "ollamaModelMissing", { model, models: result.models.join(", ") || "—" });
+  } catch (error) {
+    status.dataset.state = "error";
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 ids("reveal-key").addEventListener("click", () => {
   const input = ids("api-key");
@@ -100,7 +141,11 @@ ids("settings-form").addEventListener("submit", async (event) => {
     outgoingDeviceId: ids("outgoing-device").value,
     incomingDeviceId: ids("incoming-device").value,
     retentionDays: 30,
-    maxSessionMinutes: Number(ids("max-session-minutes").value)
+    maxSessionMinutes: Number(ids("max-session-minutes").value),
+    autoPauseSeconds: Number(ids("auto-pause-seconds").value),
+    summaryProvider: ids("summary-provider").value,
+    ollamaUrl: ids("ollama-url").value.trim() || DEFAULT_SETTINGS.ollamaUrl,
+    ollamaModel: ids("ollama-model").value.trim() || DEFAULT_SETTINGS.ollamaModel
   });
   applyLocale(ids("interface-language").value);
   ids("save-status").textContent = t(locale, "saved");

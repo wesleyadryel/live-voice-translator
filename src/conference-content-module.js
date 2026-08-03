@@ -1,4 +1,5 @@
 import { RealtimeTranslator } from "./realtime.js";
+import { createSpeechGate } from "./speech-gate.js";
 
 const OUTPUT_ELEMENT_ID = "live-voice-translated-output";
 const ORIGINAL_ELEMENT_ID = "live-voice-original-output";
@@ -14,6 +15,9 @@ let interpreterOff = false;
 let originalOn = false;
 let monitorOn = false;
 let monitorPc = null;
+let speechGate = null;
+let idleTimer = null;
+let idleParked = false;
 
 // The return feed must never be played by this tab: tabCapture would pick it up and
 // hand the translated voice to the incoming interpreter, which would translate it
@@ -76,9 +80,42 @@ function applyOutgoingMode() {
   dispatch("live-voice:outgoing-mode", { mode });
 }
 
+// Holding the session open while you are not talking streams audio that is billed
+// for nothing, so a quiet stretch parks it and the first word brings it back.
+function releaseSpeechGate() {
+  speechGate?.close();
+  speechGate = null;
+  clearTimeout(idleTimer);
+  idleTimer = null;
+  idleParked = false;
+}
+
+function setupSpeechGate() {
+  releaseSpeechGate();
+  const idleSeconds = Math.max(0, Number(currentSettings?.autoPauseSeconds) || 0);
+  if (!idleSeconds || !microphoneStream) return;
+  speechGate = createSpeechGate(microphoneStream, {
+    onSpeechStart: () => {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+      if (!idleParked) return;
+      idleParked = false;
+      applyInterpreterState().catch(() => {});
+    },
+    onSpeechEnd: () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        if (!currentSettings || idleParked) return;
+        idleParked = true;
+        applyInterpreterState().catch(() => {});
+      }, idleSeconds * 1000);
+    }
+  });
+}
+
 async function applyInterpreterState() {
   if (!currentSettings) return;
-  if (interpreterOff) {
+  if (interpreterOff || idleParked) {
     translator?.close();
     translator = null;
     return;
@@ -132,6 +169,7 @@ async function exchangeSdp(sdp) {
 }
 
 async function stopOutgoing({ restore = true } = {}) {
+  releaseSpeechGate();
   stopMonitorFeed();
   translator?.close();
   translator = null;
@@ -193,6 +231,7 @@ async function startOutgoing(settings) {
     if (interpreterOff) return { ok: true };
     translator = createTranslator(settings, audio);
     await translator.connect();
+    setupSpeechGate();
     return { ok: true };
   } catch (error) {
     await stopOutgoing();

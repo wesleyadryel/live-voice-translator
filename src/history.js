@@ -40,8 +40,16 @@ function showMeeting(id) {
   selectedMeetingId = id;
   document.querySelectorAll(".meeting-item").forEach((item) => item.classList.toggle("active", item.dataset.id === id));
   const duration = t(locale, "duration", { minutes: Math.floor(meeting.durationSeconds / 60) });
+  // Shows which engine wrote these notes, so using the local model is verifiable
+  // after the fact rather than assumed.
+  const summaryEngineLabel = (item) => {
+    const engine = item.summaryEngine;
+    if (!engine?.provider) return "";
+    const name = engine.provider === "ollama" ? `Ollama · ${engine.model}` : `OpenAI · ${engine.model}`;
+    return ` · ${escapeHtml(engine.failed ? `${name} (${t(locale, "error")})` : name)}`;
+  };
   document.querySelector("#meeting-view").innerHTML = `
-    <header class="meeting-head"><h1>${escapeHtml(meeting.title)}</h1><p>${new Date(meeting.startedAt).toLocaleString(locale)} · ${duration}</p><div class="meeting-actions"><button id="copy-meeting">${t(locale, "copy")}</button><button id="download-meeting">${t(locale, "download")}</button><button class="delete-meeting" id="delete-meeting">${t(locale, "delete")}</button></div></header>
+    <header class="meeting-head"><h1>${escapeHtml(meeting.title)}</h1><p>${new Date(meeting.startedAt).toLocaleString(locale)} · ${duration}${summaryEngineLabel(meeting)}</p><div class="meeting-actions"><button id="copy-meeting">${t(locale, "copy")}</button><button id="download-meeting">${t(locale, "download")}</button><button class="delete-meeting" id="delete-meeting">${t(locale, "delete")}</button></div></header>
     <section class="summary">${markdownToHtml(meeting.summary || t(locale, "meetingNotCreated"))}</section>
     ${meeting.transcript?.length ? `<section class="transcript"><h2>${t(locale, "fullTranscript")}</h2>${meeting.transcript.map((item) => `<div class="transcript-row"><time>${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}</time><strong>${escapeHtml(item.speaker)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}</section>` : ""}`;
   document.querySelector("#copy-meeting").onclick = async (event) => {

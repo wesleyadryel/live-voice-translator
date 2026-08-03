@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS } from "./config.js";
 import { t } from "./i18n.js";
 import { RealtimeTranslator } from "./realtime.js";
+import { createSpeechGate } from "./speech-gate.js";
 
 const incomingOutput = document.querySelector("#incoming-output");
 const outgoingOutput = document.querySelector("#outgoing-output");
@@ -28,6 +29,9 @@ let outgoingOriginalOn = false;
 let incomingOriginalOn = false;
 let outgoingMonitorOn = false;
 let monitorFeedPc = null;
+const speechGates = new Map();
+const idleTimers = new Map();
+const idleParked = new Set();
 const passthroughs = new Map();
 let speakerRecorder = null;
 let speakerAudioChunks = [];
@@ -130,13 +134,15 @@ function applyMuteState() {
   // The untranslated audio plays when it is asked for, and also whenever the
   // translated voice is not playing — muted, swapped out, or interpreter off — so
   // a direction is never unintentionally silent.
-  const incomingTranslationAudible = audioEnabled && !incomingInterpreterOff && !incomingMuted && !incomingTranslationMuted;
+  // A parked direction has no session, so its translated voice cannot be playing —
+  // the untranslated audio takes over until the speaker brings the session back.
+  const incomingTranslationAudible = audioEnabled && !incomingInterpreterOff && !idleParked.has("incoming") && !incomingMuted && !incomingTranslationMuted;
   incomingOutput.muted = !incomingTranslationAudible;
   setPassthrough("incoming", !incomingMuted && (incomingOriginalOn || !incomingTranslationAudible), tabStream, activeSettings.incomingDeviceId);
 
   // Solo routing plays the interpreter into the meeting's own output device. The
   // WebRTC path never reaches here: its conference tab swaps the sender instead.
-  const outgoingTranslationAudible = audioEnabled && !outgoingInterpreterOff && !outgoingMuted && !outgoingTranslationMuted;
+  const outgoingTranslationAudible = audioEnabled && !outgoingInterpreterOff && !idleParked.has("outgoing") && !outgoingMuted && !outgoingTranslationMuted;
   outgoingOutput.muted = !outgoingTranslationAudible;
   setPassthrough("outgoing", audioEnabled && !outgoingMuted && (outgoingOriginalOn || !outgoingTranslationAudible), microphoneStream, activeSettings.outgoingDeviceId);
   // The panel's return-feed button is the explicit switch; monitorLevel in settings
@@ -221,14 +227,29 @@ async function createSummary(settings, currentMeeting) {
   if (!sections.length) return "";
   const detail = settings.summaryDetail === "brief" ? "brief" : settings.summaryDetail === "detailed" ? "detailed" : "balanced";
   const summaryLanguage = settings.sourceLanguage || "Russian";
+  const instructions = `Create a ${detail} meeting summary in ${summaryLanguage} as Markdown. Use only these sections: ${sections.join(", ")}. Do not add or merge sections. Do not invent facts; if a selected section has no evidence, state that it was not recorded.`;
+
+  // Summarising is plain text and runs once, after the call, so latency does not
+  // matter here — the one place a local model can replace the API outright.
+  if (settings.summaryProvider === "ollama") {
+    const base = (settings.ollamaUrl || DEFAULT_SETTINGS.ollamaUrl).replace(/\/+$/, "");
+    const response = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: settings.ollamaModel || DEFAULT_SETTINGS.ollamaModel,
+        stream: false,
+        messages: [{ role: "system", content: instructions }, { role: "user", content: lines }]
+      })
+    });
+    if (!response.ok) throw new Error(tr(settings, "summaryFailed", { status: `Ollama ${response.status}` }));
+    return (await response.json())?.message?.content?.trim() || tr(settings, "summaryEmpty");
+  }
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-5.6-sol",
-      instructions: `Create a ${detail} meeting summary in ${summaryLanguage} as Markdown. Use only these sections: ${sections.join(", ")}. Do not add or merge sections. Do not invent facts; if a selected section has no evidence, state that it was not recorded.`,
-      input: lines
-    })
+    body: JSON.stringify({ model: "gpt-5.6-sol", instructions, input: lines })
   });
   if (!response.ok) throw new Error(tr(settings, "summaryFailed", { status: response.status }));
   return responseText(await response.json()) || tr(settings, "summaryEmpty");
@@ -278,8 +299,16 @@ async function saveMeeting(settings, currentMeeting, speakerAudio) {
   const record = { ...currentMeeting, finishedAt, durationSeconds: Math.round((finishedAt - currentMeeting.startedAt) / 1000), summary: "" };
   if (!settings.saveTranscript) record.transcript = [];
   if (MODES[currentMeeting.mode].summary) {
+    // Recorded so the history can state which engine actually wrote the notes,
+    // rather than leaving the user to guess whether the local model was used.
+    record.summaryEngine = settings.summaryProvider === "ollama"
+      ? { provider: "ollama", model: settings.ollamaModel || DEFAULT_SETTINGS.ollamaModel }
+      : { provider: "openai", model: "gpt-5.6-sol" };
     try { record.summary = await createSummary(settings, currentMeeting); }
-    catch (error) { record.summary = `> ${tr(settings, "summaryNotCreated", { error: error.message })}`; }
+    catch (error) {
+      record.summary = `> ${tr(settings, "summaryNotCreated", { error: error.message })}`;
+      record.summaryEngine = { ...record.summaryEngine, failed: true };
+    }
   }
   const { meetings = [] } = await storageGet({ meetings: [] });
   const cutoff = finishedAt - Math.max(1, Number(settings.retentionDays) || 30) * 86400000;
@@ -357,6 +386,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   generation += 1;
   reconnecting = false;
   stopMonitorFeed();
+  releaseSpeechGates();
   await releasePassthroughs();
   clearLifecycleTimers();
   state = { ...state, active: false };
@@ -412,7 +442,11 @@ function translatorOptions(settings, mode, outgoing) {
 // so no audio is uploaded and no tokens are spent. Its transcript pauses too:
 // nothing reaches the model to be transcribed.
 function outgoingInterpreterWanted(settings) {
-  return settings.captureKind !== "media" && !settings.webRtcOutgoing && !outgoingInterpreterOff;
+  return settings.captureKind !== "media" && !settings.webRtcOutgoing && !outgoingInterpreterOff && !idleParked.has("outgoing");
+}
+
+function incomingInterpreterWanted() {
+  return !incomingInterpreterOff && !idleParked.has("incoming");
 }
 
 async function applyInterpreterState() {
@@ -427,14 +461,52 @@ async function applyInterpreterState() {
     outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
     tasks.push(outgoingTranslator.connect());
   }
-  if (incomingInterpreterOff) {
+  if (!incomingInterpreterWanted()) {
     incomingTranslator?.close();
     incomingTranslator = null;
   } else if (!incomingTranslator) {
     incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
     tasks.push(incomingTranslator.connect());
   }
+  applyMuteState();
   await Promise.all(tasks);
+}
+
+// A direction whose speaker has gone quiet holds its realtime session open for
+// nothing. Parking it closes the session — no audio streamed, nothing billed — and
+// the speech gate reopens it the moment that side starts talking again.
+function releaseSpeechGates() {
+  for (const gate of speechGates.values()) gate.close();
+  speechGates.clear();
+  for (const timer of idleTimers.values()) clearTimeout(timer);
+  idleTimers.clear();
+  idleParked.clear();
+}
+
+function autoPauseSeconds() {
+  return Math.max(0, Number(activeSettings.autoPauseSeconds) || 0);
+}
+
+function setupSpeechGate(key, stream) {
+  const idleSeconds = autoPauseSeconds();
+  if (!idleSeconds || !stream) return;
+  const gate = createSpeechGate(stream, {
+    onSpeechStart: () => {
+      clearTimeout(idleTimers.get(key));
+      idleTimers.delete(key);
+      if (!idleParked.delete(key)) return;
+      applyInterpreterState().catch(() => {});
+    },
+    onSpeechEnd: () => {
+      clearTimeout(idleTimers.get(key));
+      idleTimers.set(key, setTimeout(() => {
+        if (!state.active || reconnecting) return;
+        idleParked.add(key);
+        applyInterpreterState().catch(() => {});
+      }, idleSeconds * 1000));
+    }
+  });
+  speechGates.set(key, gate);
 }
 
 async function connectPair(settings, mode) {
@@ -442,7 +514,7 @@ async function connectPair(settings, mode) {
   // Avoiding a microphone stream keeps video translation usable without mic permission
   // and prevents an unused second realtime session.
   outgoingTranslator = outgoingInterpreterWanted(settings) ? new RealtimeTranslator(translatorOptions(settings, mode, true)) : null;
-  incomingTranslator = incomingInterpreterOff ? null : new RealtimeTranslator(translatorOptions(settings, mode, false));
+  incomingTranslator = incomingInterpreterWanted() ? new RealtimeTranslator(translatorOptions(settings, mode, false)) : null;
   await Promise.all([outgoingTranslator?.connect(), incomingTranslator?.connect()]);
 }
 
@@ -507,6 +579,10 @@ async function start(suppliedSettings = {}) {
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
     generation += 1;
     await connectPair(settings, mode);
+    // Only the sides that actually hold a session need watching: the WebRTC path
+    // owns its outgoing interpreter inside the conference tab.
+    if (outgoingInterpreterWanted(settings)) setupSpeechGate("outgoing", microphoneStream);
+    setupSpeechGate("incoming", tabStream);
     state.phase = "live";
     sessionTimer = setTimeout(() => stop({ reason: "limit", notify: true }), Math.max(1, Number(settings.maxSessionMinutes) || 90) * 60000);
     return { ok: true, state };

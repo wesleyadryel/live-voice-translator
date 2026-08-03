@@ -45,6 +45,20 @@
           <label><span data-i18n="detail">Detail</span><select id="summary-detail"><option value="brief" data-i18n="brief">Brief</option><option value="standard" data-i18n="standard">Standard</option><option value="detailed" data-i18n="detailed">Detailed</option></select></label>
           <label><span data-i18n="sessionLimit">Session limit</span><select id="max-session-minutes"><option value="30" data-i18n="minutes30">30 minutes</option><option value="60" data-i18n="hour1">1 hour</option><option value="90" data-i18n="hour90">1 hour 30 minutes</option><option value="120" data-i18n="hours2">2 hours</option><option value="180" data-i18n="hours3">3 hours</option></select></label>
         </div>
+        <div class="notes-controls">
+          <label><span data-i18n="autoPause">Pause when silent</span><select id="auto-pause-seconds"><option value="0" data-i18n="autoPauseOff">Never pause</option><option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="45">45 s</option></select></label>
+          <label><span data-i18n="summaryProvider">Notes are written by</span><select id="summary-provider"><option value="openai" data-i18n="providerOpenAI">OpenAI</option><option value="ollama" data-i18n="providerOllama">Ollama (local)</option></select></label>
+        </div>
+        <p class="field-help" data-i18n="autoPauseHelp">A direction stops streaming audio to the API while nobody is talking, and reconnects on the first word. Saves most of a call's cost; the first phrase after a long pause can start slightly later.</p>
+        <div class="notes-controls" id="ollama-fields" hidden>
+          <label><span data-i18n="ollamaUrl">Ollama address</span><input id="ollama-url" type="url" placeholder="http://localhost:11434" spellcheck="false"></label>
+          <label><span data-i18n="ollamaModel">Local model</span><input id="ollama-model" type="text" list="ollama-models" placeholder="llama3.1" spellcheck="false"><datalist id="ollama-models"></datalist></label>
+        </div>
+        <div class="api-test-control" id="ollama-test-row" hidden>
+          <button type="button" class="secondary-button api-test-button" id="test-ollama" data-i18n="testConnection">Test connection</button>
+          <span id="ollama-test-status"></span>
+        </div>
+        <p class="field-help" id="ollama-help" data-i18n="ollamaHelp" hidden>Only the written notes run locally — live translation still needs OpenAI, because Ollama does not process audio. Start Ollama with OLLAMA_ORIGINS set to chrome-extension://* so it accepts requests from this extension.</p>
         <div class="summary-options" role="group" data-i18n-aria="summarySections" aria-label="Summary sections">
           <p data-i18n="summarySectionsHelp">Choose exactly what the meeting summary should include.</p>
           <label class="check-row"><input id="summary-overview" type="checkbox"><span data-i18n="summaryOverview">Overview</span></label>
