@@ -157,6 +157,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "CONFERENCE_USAGE") {
+    if (sender.tab?.id !== activeConferenceTabId) return false;
+    chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_USAGE", usage: message.usage }).catch(() => {});
+    return false;
+  }
+
   if (message.type === "CONFERENCE_OUTGOING_TRANSCRIPT") {
     if (sender.tab?.id !== activeConferenceTabId) return false;
     chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_OUTGOING_TRANSCRIPT", text: message.text, language: message.language }).catch(() => {});

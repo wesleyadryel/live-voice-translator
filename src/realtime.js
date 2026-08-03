@@ -2,7 +2,7 @@ const REALTIME_MODEL = "gpt-realtime-1.5";
 const REALTIME_URL = `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(REALTIME_MODEL)}`;
 
 export class RealtimeTranslator {
-  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, onOutputTrack, exchangeSdp, verbatim = false, manualChunkMs = 0 }) {
+  constructor({ apiKey, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, onOutputTrack, onUsage, exchangeSdp, verbatim = false, manualChunkMs = 0 }) {
     this.apiKey = apiKey;
     this.inputStream = inputStream;
     this.outputElement = outputElement;
@@ -14,6 +14,7 @@ export class RealtimeTranslator {
     this.onTranscript = onTranscript || (() => {});
     this.onDisconnect = onDisconnect || (() => {});
     this.onOutputTrack = onOutputTrack || (() => {});
+    this.onUsage = onUsage || (() => {});
     this.exchangeSdp = exchangeSdp || null;
     this.verbatim = verbatim;
     this.manualChunkMs = manualChunkMs;
@@ -61,7 +62,21 @@ export class RealtimeTranslator {
       try {
         const event = JSON.parse(message.data);
         if (event.type === "response.created") this.responseInProgress = true;
-        if (event.type === "response.done") this.responseInProgress = false;
+        if (event.type === "response.done") {
+          this.responseInProgress = false;
+          // The API reports what each response actually cost, split between audio
+          // and text, which is the only trustworthy source for usage reporting.
+          const usage = event.response?.usage;
+          if (usage) {
+            this.onUsage({
+              inputTokens: Number(usage.input_tokens) || 0,
+              outputTokens: Number(usage.output_tokens) || 0,
+              inputAudioTokens: Number(usage.input_token_details?.audio_tokens) || 0,
+              outputAudioTokens: Number(usage.output_token_details?.audio_tokens) || 0,
+              cachedTokens: Number(usage.input_token_details?.cached_tokens) || 0
+            });
+          }
+        }
         if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
           this.transcriptBuffer += event.delta || "";
         }

@@ -30,7 +30,10 @@
 .history-search input { min-width: 0; height: 36px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 11px; }
 .history-search input::placeholder { color: var(--tertiary); }
 #history-count { display: block; margin: 8px 3px 0; color: var(--tertiary); font-size: 9px; }
-.history-list { margin-top: 8px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+/* The list takes the leftover height and scrolls inside it, so the usage panel and
+   the delete button below stay on screen no matter how many meetings there are. */
+.history-list { flex: 1 1 auto; min-height: 0; margin-top: 8px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.history-layout aside > .danger-button { flex: none; }
 .meeting-item {
   position: relative;
   width: 100%;

@@ -404,6 +404,7 @@ $("#open-settings").addEventListener("click", () => chrome.runtime.openOptionsPa
 $("#setup-action").addEventListener("click", () => chrome.runtime.openOptionsPage());
 $("#error-settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
 $("#open-history").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("src/history.html") }));
+$("#open-usage").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("src/usage.html") }));
 $("#accept-notice").addEventListener("click", async () => {
   await saveSettings({ recordingNoticeAccepted: true });
   currentSettings.recordingNoticeAccepted = true;

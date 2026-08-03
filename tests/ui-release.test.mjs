@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { t } from "../src/i18n.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
+const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, usageJs, usage, usageCss, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
   read("../src/popup.html"),
   read("../src/popup.js"),
   read("../src/offscreen.js"),
@@ -11,6 +11,9 @@ const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, h
   read("../src/realtime.js"),
   read("../src/background.js"),
   read("../src/history.js"),
+  read("../src/usage.js"),
+  read("../src/usage.html"),
+  read("../src/usage.css"),
   read("../src/options.html"),
   read("../src/history.html"),
   read("../src/release.css"),
@@ -19,7 +22,7 @@ const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, h
   read("../manifest.json")
 ]);
 
-const allHtml = `${popup}\n${options}\n${history}`;
+const allHtml = `${popup}\n${options}\n${history}\n${usage}`;
 const translationKeys = [...allHtml.matchAll(/data-i18n(?:-aria|-title|-placeholder)?="([^"]+)"/g)].map((match) => match[1]);
 for (const key of new Set(translationKeys)) assert.notEqual(t("en", key), key, `English translation is missing for ${key}`);
 for (const language of ["en", "ru", "es", "de", "fr", "pt-BR"]) {
@@ -102,6 +105,45 @@ assert.match(options, /summary-deadlines/);
 assert.match(options, /summary-owners/);
 assert.match(optionsCss, /position: sticky/, "the save action must remain reachable on long settings pages");
 assert.match(optionsCss, /\.options-shell \.compact-settings-form > section \{/, "release section spacing must override the legacy settings selector");
+
+// Usage must come from what the API reports, not from elapsed time.
+assert.match(realtimeJs, /event\.response\?\.usage/, "token usage must be read from the API's own report");
+// Per-minute storage is what makes the minute/hour/day scales possible; a coarser
+// resolution cannot be un-aggregated later.
+assert.match(offscreenJs, /Math\.floor\(Date\.now\(\) \/ 60000\)/, "usage must be recorded per minute, not per day");
+assert.match(offscreenJs, /usageBuckets\[minute\] = values\.map/, "usage minutes must accumulate rather than overwrite");
+assert.match(offscreenJs, /USAGE_RETENTION_MINUTES/, "per-minute history must be bounded");
+assert.match(usageJs, /Math\.floor\(minute \/ size\) \* size/, "the chart must fold minutes into the selected scale");
+assert.match(usageJs, /stored\.usageDaily/, "usage recorded before per-minute buckets must still appear");
+assert.match(usageJs, /const peak = Math\.max/, "the chart must scale bars against the busiest day");
+assert.match(usage, /id="usage-chart"/, "the usage page must chart token usage");
+// Bars mean nothing without a scale, and the gridlines must match its marks.
+assert.equal((usage.match(/<div class="usage-grid"[^>]*>(.*?)<\/div>/s)?.[1].match(/<i>/g) || []).length, 5, "gridlines must match the five scale marks");
+assert.match(usageJs, /scale\.replaceChildren/, "the chart must label its vertical scale");
+// Pointing at a colour must isolate that colour, in the bars and in the tooltip.
+assert.match(usageJs, /function segmentUnder/, "hovering a bar segment must be detected per colour");
+assert.match(usageJs, /chart\.dataset\.hovered = segment/, "the chart must expose which colour is hovered so CSS can lift it");
+assert.match(usageCss, /\.usage-chart\[data-hovered="audio"\] \.usage-bar-text/, "the other series must recede while a colour is hovered");
+assert.match(usageJs, /segment === key \? " is-active" : ""/, "the tooltip row for the hovered colour must be highlighted");
+assert.match(usageCss, /\.usage-plot\.preview-audio \.usage-bar-text/, "hovering a legend colour must preview that series");
+assert.match(usageCss, /--usage-plot-height:\s*clamp\(/, "scale, gridlines and bars must share one concrete height");
+// A custom property defined as var(itself) is invalid, so every length using it
+// silently falls back to auto and the element collapses — no error anywhere.
+for (const [name, sheet] of [["usage.css", usageCss], ["release.css", releaseCss], ["history.css", historyCss], ["options-enhancements.css", optionsCss]]) {
+  const selfReferencing = [...sheet.matchAll(/(--[\w-]+)\s*:\s*var\(\s*(--[\w-]+)\s*\)/g)].filter(([, declared, used]) => declared === used);
+  assert.equal(selfReferencing.length, 0, `${name} declares a self-referencing custom property: ${selfReferencing.map(([, n]) => n).join(", ")}`);
+}
+assert.match(popup, /id="open-usage"/, "usage must be reachable from the panel, not buried in per-meeting history");
+assert.match(popupJs, /usage\.html/, "the usage button must open the usage page");
+// Usage is not per meeting, so deleting meetings must leave it alone.
+assert.equal(historyJs.includes("usageDaily"), false, "clearing meeting history must not erase recorded usage");
+assert.match(usageJs, /chrome\.storage\.onChanged\.addListener/, "an open usage page must refresh when a session ends");
+// The outgoing interpreter lives in the conference tab, so its cost is invisible
+// unless that tab reports it — this was why a dubbed phrase recorded nothing.
+assert.match(contentModuleJs, /onUsage: \(usage\) => chrome\.runtime\.sendMessage\(\{ type: "CONFERENCE_USAGE"/, "the conference tab must report what its interpreter spent");
+assert.match(backgroundJs, /CONFERENCE_USAGE/, "usage from the conference tab must reach the offscreen document");
+assert.match(offscreenJs, /message\.type === "ADD_USAGE"/, "the offscreen document must accept usage reported from a tab");
+assert.match(offscreenJs, /usageFlushTimer = setTimeout/, "usage must be persisted while a session runs, not only when it stops");
 
 assert.match(history, /id="history-search"/, "meeting history must be searchable");
 assert.match(history, /id="history-count"/, "meeting history must expose its size");

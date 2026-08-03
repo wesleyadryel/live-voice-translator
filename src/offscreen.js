@@ -29,6 +29,9 @@ let outgoingOriginalOn = false;
 let incomingOriginalOn = false;
 let outgoingMonitorOn = false;
 let monitorFeedPc = null;
+let sessionUsage = { inputTokens: 0, outputTokens: 0, inputAudioTokens: 0, outputAudioTokens: 0, cachedTokens: 0 };
+let usageFlushTimer = null;
+const pendingBuckets = new Map();
 const speechGates = new Map();
 const idleTimers = new Map();
 const idleParked = new Set();
@@ -151,7 +154,7 @@ function applyMuteState() {
 }
 
 function statusState() {
-  return { ...state, outgoingMuted, outgoingTranslationMuted, incomingMuted, incomingTranslationMuted, outgoingInterpreterOff, incomingInterpreterOff, outgoingOriginalOn, incomingOriginalOn, outgoingMonitorOn };
+  return { ...state, outgoingMuted, outgoingTranslationMuted, incomingMuted, incomingTranslationMuted, outgoingInterpreterOff, incomingInterpreterOff, outgoingOriginalOn, incomingOriginalOn, outgoingMonitorOn, sessionUsage: { ...sessionUsage } };
 }
 
 function freshState(overrides = {}) {
@@ -401,6 +404,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   if (reusableTabStream) await holdPreparedCapture(reusableTabStream, activeSettings.captureTabId);
   state = freshState({ phase: capturedMeeting ? "summarizing" : "idle", durationSeconds, transcriptCount: state.transcriptCount });
   const completedMeeting = persist && capturedMeeting && MODES[capturedMeeting.mode]?.notes ? await saveMeeting(settings, capturedMeeting, speakerAudio) : null;
+  await persistUsage();
   if (hadActiveSession && durationSeconds > 0) {
     const usage = await storageGet({ usageSeconds: 0, sessionCount: 0 });
     await storageSet({ usageSeconds: Number(usage.usageSeconds || 0) + durationSeconds, sessionCount: Number(usage.sessionCount || 0) + 1 });
@@ -414,6 +418,43 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const result = { ok: true, state, meetingId: completedMeeting?.id || null, reason };
   if (notify) chrome.runtime.sendMessage({ type: "SESSION_ENDED", result }).catch(() => {});
   return result;
+}
+
+const EMPTY_USAGE = { inputTokens: 0, outputTokens: 0, inputAudioTokens: 0, outputAudioTokens: 0, cachedTokens: 0 };
+
+// Reported by the API per response, so this is measured cost rather than an
+// estimate from elapsed time.
+const USAGE_FIELDS = ["inputTokens", "outputTokens", "inputAudioTokens", "outputAudioTokens", "cachedTokens"];
+const USAGE_RETENTION_MINUTES = 90 * 24 * 60;
+
+// Stored per minute rather than per day: anything coarser makes a by-minute or
+// by-hour view impossible to reconstruct later. Only minutes with actual traffic
+// are written, so an hour of talking costs 60 small rows.
+function recordUsage(usage) {
+  for (const key of USAGE_FIELDS) sessionUsage[key] += Number(usage[key]) || 0;
+  const minute = String(Math.floor(Date.now() / 60000));
+  const bucket = pendingBuckets.get(minute) || USAGE_FIELDS.map(() => 0);
+  USAGE_FIELDS.forEach((key, index) => { bucket[index] += Number(usage[key]) || 0; });
+  pendingBuckets.set(minute, bucket);
+  // Written shortly after it arrives rather than only at stop: the offscreen
+  // document can be torn down at any time, and unsaved usage would vanish with it.
+  clearTimeout(usageFlushTimer);
+  usageFlushTimer = setTimeout(() => { persistUsage().catch(() => {}); }, 3000);
+}
+
+async function persistUsage() {
+  clearTimeout(usageFlushTimer);
+  usageFlushTimer = null;
+  if (!pendingBuckets.size) return;
+  const { usageBuckets = {} } = await storageGet({ usageBuckets: {} });
+  for (const [minute, values] of pendingBuckets) {
+    const previous = usageBuckets[minute] || USAGE_FIELDS.map(() => 0);
+    usageBuckets[minute] = values.map((value, index) => (Number(previous[index]) || 0) + value);
+  }
+  pendingBuckets.clear();
+  const oldest = Math.floor(Date.now() / 60000) - USAGE_RETENTION_MINUTES;
+  const kept = Object.entries(usageBuckets).filter(([minute]) => Number(minute) >= oldest);
+  await storageSet({ usageBuckets: Object.fromEntries(kept) });
 }
 
 function translatorOptions(settings, mode, outgoing) {
@@ -434,6 +475,7 @@ function translatorOptions(settings, mode, outgoing) {
       addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant");
     },
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
+    onUsage: (usage) => recordUsage(usage),
     onDisconnect: () => scheduleReconnect(settings, mode)
   };
 }
@@ -597,6 +639,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
   if (message.type === "GET_STATUS") {
     sendResponse({ ok: true, state: statusState(), liveTranscript: liveTranscript.slice(-16), preparedTabId: preparedCapture?.tabId || null });
+    return false;
+  }
+  if (message.type === "ADD_USAGE") {
+    recordUsage(message.usage || {});
+    sendResponse({ ok: true });
     return false;
   }
   if (message.type === "MONITOR_STOP") {

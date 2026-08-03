@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Live Voice Translator</title>
+  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="history.css">
+  <link rel="stylesheet" href="release.css">
+  <link rel="stylesheet" href="usage.css">
+</head>
+<body class="usage-shell">
+  <main class="usage-layout">
+    <header class="usage-head">
+      <div class="brand-row"><img class="brand-mark" src="../assets/icon-128.png" alt="" aria-hidden="true"><div><small>LIVE VOICE</small><strong data-i18n="tokenUsage">Token usage</strong></div></div>
+      <p data-i18n="usageHelp">Everything the translation actually spent, as reported by OpenAI. Notes written by a local model cost nothing and are not counted here.</p>
+    </header>
+
+    <section class="usage-totals" id="usage-totals">
+      <div class="usage-card"><small data-i18n="totalTokens">Total tokens</small><strong id="total-tokens">0</strong><span id="total-window"></span></div>
+      <div class="usage-card"><small data-i18n="audioTokens">Audio</small><strong id="audio-tokens">0</strong><span id="audio-share"></span></div>
+      <div class="usage-card"><small data-i18n="textTokens">Text</small><strong id="text-tokens">0</strong><span id="text-share"></span></div>
+      <div class="usage-card"><small data-i18n="used30">Last 30 days</small><strong id="recent-tokens">0</strong><span id="recent-average"></span></div>
+    </section>
+
+    <section class="usage-graph-card">
+      <div class="usage-controls">
+        <div class="usage-segment" role="group" aria-label="Range" data-i18n-aria="range" id="range-group">
+          <button type="button" data-range="60" data-i18n="range1h">1h</button>
+          <button type="button" data-range="1440" class="active" data-i18n="range24h">24h</button>
+          <button type="button" data-range="10080" data-i18n="range7d">7d</button>
+          <button type="button" data-range="43200" data-i18n="range30d">30d</button>
+          <button type="button" data-range="0" data-i18n="rangeAll">All</button>
+        </div>
+        <div class="usage-segment" role="group" aria-label="Scale" data-i18n-aria="scaleLabel" id="scale-group">
+          <button type="button" data-bucket="1" data-i18n="perMinute">Minute</button>
+          <button type="button" data-bucket="60" class="active" data-i18n="perHour">Hour</button>
+          <button type="button" data-bucket="1440" data-i18n="perDayShort">Day</button>
+        </div>
+        <div class="usage-segment" role="group" aria-label="Series" data-i18n-aria="seriesLabel" id="series-group">
+          <button type="button" data-series="all" class="active" data-i18n="bothSeries">Both</button>
+          <button type="button" data-series="audio" data-i18n="audioTokens">Audio</button>
+          <button type="button" data-series="text" data-i18n="textTokens">Text</button>
+        </div>
+        <p class="usage-legend" id="usage-legend">
+          <button type="button" class="usage-legend-item" data-series="audio" data-i18n-title="isolateSeries"><span class="usage-key usage-key-audio"></span><span data-i18n="audioTokens">Audio</span></button>
+          <button type="button" class="usage-legend-item" data-series="text" data-i18n-title="isolateSeries"><span class="usage-key usage-key-text"></span><span data-i18n="textTokens">Text</span></button>
+        </p>
+      </div>
+
+      <div class="usage-plot" id="usage-plot">
+        <div class="usage-scale" id="usage-scale"></div>
+        <div class="usage-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="usage-chart" id="usage-chart" role="img" aria-label="Token usage chart"></div>
+        <div class="usage-tooltip" id="usage-tooltip" hidden></div>
+      </div>
+      <div class="usage-axis" id="usage-axis"></div>
+      <p class="usage-empty" id="usage-empty" data-i18n="noUsageYet">Nothing recorded yet. Usage is written when a session stops.</p>
+    </section>
+  </main>
+  <script type="module" src="usage.js"></script>
+</body>
+</html>

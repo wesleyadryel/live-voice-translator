@@ -202,6 +202,8 @@ function createTranslator(settings, audio) {
       applyMonitorState().catch(() => {});
     },
     onTranscript: (text) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_TRANSCRIPT", text, language: settings.targetLanguage }).catch(() => {}),
+    // This tab owns the outgoing interpreter, so its cost is only known here.
+    onUsage: (usage) => chrome.runtime.sendMessage({ type: "CONFERENCE_USAGE", usage }).catch(() => {}),
     onDisconnect: (reason) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_DISCONNECTED", reason }).catch(() => {})
   });
 }
