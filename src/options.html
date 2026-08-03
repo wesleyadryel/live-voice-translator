@@ -46,7 +46,7 @@
           <label><span data-i18n="sessionLimit">Session limit</span><select id="max-session-minutes"><option value="30" data-i18n="minutes30">30 minutes</option><option value="60" data-i18n="hour1">1 hour</option><option value="90" data-i18n="hour90">1 hour 30 minutes</option><option value="120" data-i18n="hours2">2 hours</option><option value="180" data-i18n="hours3">3 hours</option></select></label>
         </div>
         <div class="notes-controls">
-          <label><span data-i18n="autoPause">Pause when silent</span><select id="auto-pause-seconds"><option value="0" data-i18n="autoPauseOff">Never pause</option><option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="45">45 s</option></select></label>
+          <label><span data-i18n="autoPause">Pause when silent</span><select id="auto-pause-seconds"><option value="0" data-i18n="autoPauseOff">Never pause</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="45">45 s</option></select></label>
           <label><span data-i18n="summaryProvider">Notes are written by</span><select id="summary-provider"><option value="openai" data-i18n="providerOpenAI">OpenAI</option><option value="ollama" data-i18n="providerOllama">Ollama (local)</option></select></label>
         </div>
         <p class="field-help" data-i18n="autoPauseHelp">A direction stops streaming audio to the API while nobody is talking, and reconnects on the first word. Saves most of a call's cost; the first phrase after a long pause can start slightly later.</p>

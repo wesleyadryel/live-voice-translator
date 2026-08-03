@@ -483,8 +483,15 @@ function translatorOptions(settings, mode, outgoing) {
 // A direction whose interpreter is switched off holds no realtime session at all,
 // so no audio is uploaded and no tokens are spent. Its transcript pauses too:
 // nothing reaches the model to be transcribed.
+// "Eligible" is whether this side could hold a session at all; "wanted" adds
+// whether it should hold one right now. A parked side is eligible but not wanted,
+// and still needs its speech gate running to notice when to come back.
+function outgoingInterpreterEligible(settings) {
+  return settings.captureKind !== "media" && !settings.webRtcOutgoing && !outgoingInterpreterOff;
+}
+
 function outgoingInterpreterWanted(settings) {
-  return settings.captureKind !== "media" && !settings.webRtcOutgoing && !outgoingInterpreterOff && !idleParked.has("outgoing");
+  return outgoingInterpreterEligible(settings) && !idleParked.has("outgoing");
 }
 
 function incomingInterpreterWanted() {
@@ -620,10 +627,17 @@ async function start(suppliedSettings = {}) {
     applyMuteState();
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
     generation += 1;
+    // With auto-pause on, a call starts with both sides parked: nothing is streamed
+    // — and nothing is billed — until someone actually speaks. Most of a meeting is
+    // spent listening, so this is where the bulk of the saving comes from.
+    if (autoPauseSeconds()) {
+      if (outgoingInterpreterEligible(settings)) idleParked.add("outgoing");
+      idleParked.add("incoming");
+    }
     await connectPair(settings, mode);
-    // Only the sides that actually hold a session need watching: the WebRTC path
-    // owns its outgoing interpreter inside the conference tab.
-    if (outgoingInterpreterWanted(settings)) setupSpeechGate("outgoing", microphoneStream);
+    // The gate runs on every eligible side, parked or not: it is what notices the
+    // speech that brings a parked session back.
+    if (outgoingInterpreterEligible(settings)) setupSpeechGate("outgoing", microphoneStream);
     setupSpeechGate("incoming", tabStream);
     state.phase = "live";
     sessionTimer = setTimeout(() => stop({ reason: "limit", notify: true }), Math.max(1, Number(settings.maxSessionMinutes) || 90) * 60000);

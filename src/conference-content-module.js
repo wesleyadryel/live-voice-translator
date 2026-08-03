@@ -91,7 +91,9 @@ function releaseSpeechGate() {
 }
 
 function setupSpeechGate() {
+  const parked = idleParked;
   releaseSpeechGate();
+  idleParked = parked;
   const idleSeconds = Math.max(0, Number(currentSettings?.autoPauseSeconds) || 0);
   if (!idleSeconds || !microphoneStream) return;
   speechGate = createSpeechGate(microphoneStream, {
@@ -231,9 +233,14 @@ async function startOutgoing(settings) {
     const audio = ensureOutputElement();
     audio.muted = true;
     if (interpreterOff) return { ok: true };
+    // With auto-pause on, the session starts parked: nothing is streamed until the
+    // first word, which is where most of the saving comes from in a call spent
+    // mostly listening. The gate runs regardless — it is what unparks it.
+    idleParked = Math.max(0, Number(settings.autoPauseSeconds) || 0) > 0;
+    setupSpeechGate();
+    if (idleParked) return { ok: true };
     translator = createTranslator(settings, audio);
     await translator.connect();
-    setupSpeechGate();
     return { ok: true };
   } catch (error) {
     await stopOutgoing();

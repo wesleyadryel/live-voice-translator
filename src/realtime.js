@@ -77,11 +77,14 @@ export class RealtimeTranslator {
             });
           }
         }
-        if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
+        // A text-only response reports through the text events instead of the
+        // audio-transcript ones, so both shapes have to be accepted.
+        if (["response.output_audio_transcript.delta", "response.audio_transcript.delta", "response.output_text.delta", "response.text.delta"].includes(event.type)) {
           this.transcriptBuffer += event.delta || "";
         }
-        if (event.type === "response.output_audio_transcript.done" || event.type === "response.audio_transcript.done") {
-          const transcript = (event.transcript || this.transcriptBuffer).trim();
+        if (["response.output_audio_transcript.done", "response.audio_transcript.done", "response.output_text.done", "response.text.done"].includes(event.type)) {
+          // Audio events carry `transcript`, text events carry `text`.
+          const transcript = (event.transcript || event.text || this.transcriptBuffer).trim();
           this.transcriptBuffer = "";
           if (transcript) this.onTranscript(transcript);
         }
@@ -93,7 +96,9 @@ export class RealtimeTranslator {
         session: {
           type: "realtime",
           model: REALTIME_MODEL,
-          output_modalities: ["audio"],
+          // The note-only modes never play the reply — the element is muted — so
+          // asking for audio bought expensive output tokens and threw them away.
+          output_modalities: this.verbatim ? ["text"] : ["audio"],
           audio: {
             input: {
               turn_detection: this.manualChunkMs ? null : {
@@ -110,20 +115,18 @@ export class RealtimeTranslator {
             output: { voice: this.voice }
           },
           instructions: this.verbatim
-            ? `Repeat every spoken utterance verbatim in ${this.from}. Output only the exact spoken words as speech. Never answer, summarize, or add commentary.`
+            ? `Transcribe every spoken utterance verbatim in ${this.from}. Output only the exact spoken words as text. Never answer, summarize, translate, or add commentary.`
+            // Auto-pause reopens the session often and these instructions are
+            // resent every time, so they are kept tight — the same rules stated
+            // once instead of restated from several angles.
             : [
-                `Act only as a simultaneous interpreter from ${this.from} to ${this.to}.`,
-                `Translate every spoken utterance naturally into ${this.to}.`,
-                // The model hears the source audio, so it can mirror how something was
-                // said, not just what was said. Without this it defaults to a flat,
-                // uniform read that strips the speaker's intent.
-                "Perform the translation the way the speaker delivered it: match their loudness, energy, speaking rate, and emotion.",
-                "If they whisper, whisper; if they raise their voice, raise yours; if they sound hesitant, amused, urgent, or annoyed, carry that across.",
-                "Keep their pauses, emphasis on particular words, and rising or falling intonation, including questions asked as statements.",
-                "Reproduce stretched-out words, drawn-out vowels, interjections, exclamations, laughter and sighs with the same exaggeration: if they say \"nooooossa\", the translation is an equally stretched \"wooooow\", never a clipped, tidy one.",
-                "Never flatten an expressive delivery into a neutral one, and never add expression the speaker did not have.",
-                "Output only the translation as speech. Never answer questions or add commentary.",
-                "Keep names, numbers, product terms, and tone accurate. Be concise to minimize latency."
+                `Act only as a simultaneous interpreter from ${this.from} to ${this.to}. Output only the translation as speech, never answers or commentary.`,
+                // The model hears the source audio, so it can mirror how something
+                // was said. Without this it defaults to a flat, uniform read.
+                "Mirror the speaker's delivery exactly: loudness, energy, pace, emotion, pauses, word stress and intonation.",
+                "Whisper if they whisper, shout if they shout, and stretch drawn-out words and interjections just as far (\"nooooossa\" becomes an equally stretched \"wooooow\").",
+                "Never flatten expressive speech into neutral speech, and never add expression they did not have.",
+                "Keep names, numbers and product terms accurate. Be concise to minimize latency."
               ].join(" ")
         }
       }));

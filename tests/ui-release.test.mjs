@@ -50,8 +50,8 @@ for (const id of ["mute-outgoing-interpreter", "mute-outgoing-translation", "add
   assert.match(popup, new RegExp(`id="${id}"`), `the main panel must expose the ${id} control`);
 }
 assert.match(popupJs, /aria-pressed/, "mute controls must announce their state accessibly");
-assert.match(realtimeJs, /match their loudness, energy, speaking rate, and emotion/, "the interpreter must mirror how something was said, not only what was said");
-assert.match(realtimeJs, /drawn-out vowels, interjections, exclamations/, "stretched, emphatic delivery must survive translation instead of being tidied up");
+assert.match(realtimeJs, /Mirror the speaker's delivery exactly: loudness, energy, pace, emotion/, "the interpreter must mirror how something was said, not only what was said");
+assert.match(realtimeJs, /stretch drawn-out words and interjections/, "stretched, emphatic delivery must survive translation instead of being tidied up");
 assert.equal(realtimeJs.includes('eagerness: "high"'), false, "an eager turn detector clips drawn-out delivery and fires on background noise");
 for (const source of [offscreenJs, contentModuleJs]) {
   assert.match(source, /autoGainControl: false/, "automatic gain control would flatten the delivery the interpreter is asked to mirror");
@@ -108,11 +108,20 @@ assert.match(optionsCss, /\.options-shell \.compact-settings-form > section \{/,
 
 // Usage must come from what the API reports, not from elapsed time.
 assert.match(realtimeJs, /event\.response\?\.usage/, "token usage must be read from the API's own report");
+// The note-only modes mute the reply, so asking for audio bought the most
+// expensive tokens available and discarded them.
+assert.match(realtimeJs, /output_modalities: this\.verbatim \? \["text"\] : \["audio"\]/, "modes that never play a reply must not request audio output");
+assert.match(realtimeJs, /response\.output_text\.delta/, "text-only responses report through the text events");
 // Per-minute storage is what makes the minute/hour/day scales possible; a coarser
 // resolution cannot be un-aggregated later.
 assert.match(offscreenJs, /Math\.floor\(Date\.now\(\) \/ 60000\)/, "usage must be recorded per minute, not per day");
 assert.match(offscreenJs, /usageBuckets\[minute\] = values\.map/, "usage minutes must accumulate rather than overwrite");
 assert.match(offscreenJs, /USAGE_RETENTION_MINUTES/, "per-minute history must be bounded");
+// Most of a call is spent listening, so a session that opens with the call bills
+// for silence before a word is said.
+assert.match(offscreenJs, /if \(autoPauseSeconds\(\)\) \{[\s\S]*idleParked\.add\("incoming"\)/, "auto-pause must start a call parked instead of streaming immediately");
+assert.match(offscreenJs, /if \(outgoingInterpreterEligible\(settings\)\) setupSpeechGate\("outgoing"/, "a parked side still needs its gate, or nothing can unpark it");
+assert.match(contentModuleJs, /if \(idleParked\) return \{ ok: true \};/, "the conference tab must also start parked");
 assert.match(usageJs, /Math\.floor\(minute \/ size\) \* size/, "the chart must fold minutes into the selected scale");
 assert.match(usageJs, /stored\.usageDaily/, "usage recorded before per-minute buckets must still appear");
 assert.match(usageJs, /const peak = Math\.max/, "the chart must scale bars against the busiest day");

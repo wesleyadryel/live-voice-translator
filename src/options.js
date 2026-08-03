@@ -43,7 +43,7 @@ async function init() {
   ids("speaker-diarization").checked = settings.speakerDiarization !== false;
   ids("monitor-level").value = settings.monitorLevel;
   ids("max-session-minutes").value = String(settings.maxSessionMinutes || 90);
-  ids("auto-pause-seconds").value = String(settings.autoPauseSeconds ?? 10);
+  ids("auto-pause-seconds").value = String(settings.autoPauseSeconds ?? DEFAULT_SETTINGS.autoPauseSeconds);
   ids("summary-provider").value = settings.summaryProvider || "openai";
   ids("ollama-url").value = settings.ollamaUrl || "";
   ids("ollama-model").value = settings.ollamaModel || "";
