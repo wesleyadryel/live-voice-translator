@@ -49,13 +49,41 @@
     <div class="session-controls" id="session-controls" role="group" aria-label="Session controls" data-i18n-aria="sessionControls">
       <div class="mute-row" id="mute-row-outgoing">
         <span class="mute-row-label" data-i18n="toParticipant">You → participant</span>
-        <div class="mute-buttons">
+        <div class="mute-buttons" id="mute-buttons-outgoing">
           <button type="button" class="mute-button" id="mute-outgoing-interpreter" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.4a4 4 0 0 0-4 4v3.8a4 4 0 0 0 8 0V7.4a4 4 0 0 0-4-4Z"/><path d="M4.6 12.4a7.4 7.4 0 0 0 14.8 0"/><path class="mute-slash" d="M4 4l16 16"/></svg><span data-i18n="interpreter">Interpreter</span></button>
           <button type="button" class="mute-button" id="mute-outgoing-translation" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h7M7.5 5v1.5M9.2 6.5c0 3.4-2 5.8-5.2 7M6 10.2c.9 1.9 2.4 3.2 4.6 3.9"/><path d="m12.4 19 3.6-8.4 3.6 8.4M13.8 15.9h4.4"/><path class="mute-slash" d="M4 4l16 16"/></svg><span data-i18n="translation">Translate</span></button>
           <button type="button" class="mute-button add-button" id="add-outgoing-original" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8a2.7 2.7 0 0 0-2.7 2.7v5a2.7 2.7 0 0 0 5.4 0v-5A2.7 2.7 0 0 0 12 3.8Z"/><path d="M5.6 11a6.4 6.4 0 0 0 12.8 0M12 17.4V20"/></svg><span data-i18n="original">Original</span></button>
           <button type="button" class="mute-button add-button" id="add-outgoing-monitor" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 14.4v-2.6a7.4 7.4 0 0 1 14.8 0v2.6"/><path d="M4.6 13.4h2.2v5.2H5.7a1.1 1.1 0 0 1-1.1-1.1v-4.1ZM19.4 13.4h-2.2v5.2h1.1a1.1 1.1 0 0 0 1.1-1.1v-4.1Z"/></svg><span data-i18n="monitorLabel">Monitor</span></button>
           <button type="button" class="mute-button" id="mute-outgoing" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5.4 6.6 9H3.8v6h2.8L11 18.6V5.4Z"/><path d="M15.4 9.4a3.7 3.7 0 0 1 0 5.2M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="mute-slash" d="M4 4l16 16"/></svg><span data-i18n="muteAll">Mute</span></button>
         </div>
+        <div class="gain-row">
+          <label for="outgoing-gain" data-i18n="myMicLevel">My mic</label>
+          <input type="range" id="outgoing-gain" min="0.1" max="8" step="0.1" value="1" data-i18n-title="gainOutgoingHint" data-i18n-aria="gainOutgoingHint">
+          <output id="outgoing-gain-value" for="outgoing-gain">1.0×</output>
+        </div>
+        <details class="tuning">
+          <summary data-i18n="fineTuning">Fine tuning</summary>
+          <div class="gain-row">
+            <label for="outgoing-low-cut" data-i18n="lowCut">Low cut</label>
+            <input type="range" id="outgoing-low-cut" min="0" max="300" step="10" value="0" data-i18n-title="lowCutHint" data-i18n-aria="lowCutHint">
+            <output id="outgoing-low-cut-value" for="outgoing-low-cut">Off</output>
+          </div>
+          <div class="gain-row">
+            <label for="outgoing-clarity" data-i18n="clarity">Clarity</label>
+            <input type="range" id="outgoing-clarity" min="0" max="12" step="0.5" value="0" data-i18n-title="clarityHint" data-i18n-aria="clarityHint">
+            <output id="outgoing-clarity-value" for="outgoing-clarity">Off</output>
+          </div>
+          <div class="gain-row">
+            <label for="outgoing-high-cut" data-i18n="highCut">High cut</label>
+            <input type="range" id="outgoing-high-cut" min="3000" max="20000" step="500" value="20000" data-i18n-title="highCutHint" data-i18n-aria="highCutHint">
+            <output id="outgoing-high-cut-value" for="outgoing-high-cut">Off</output>
+          </div>
+          <div class="gain-row">
+            <label for="outgoing-pause" data-i18n="pauseTolerance">Pause</label>
+            <input type="range" id="outgoing-pause" min="0" max="3000" step="100" value="0" data-i18n-title="pauseToleranceHint" data-i18n-aria="pauseToleranceHint">
+            <output id="outgoing-pause-value" for="outgoing-pause">Auto</output>
+          </div>
+        </details>
       </div>
       <div class="mute-row" id="mute-row-incoming">
         <span class="mute-row-label" data-i18n="toYou">Participant → you</span>
@@ -66,6 +94,34 @@
           <button type="button" class="mute-button add-button" id="add-incoming-return" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5 4.5 10 9 14.5"/><path d="M4.5 10h9.8a5.2 5.2 0 0 1 0 10.4h-6"/></svg><span data-i18n="returnLabel">Send back</span></button>
           <button type="button" class="mute-button" id="mute-incoming" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5.4 6.6 9H3.8v6h2.8L11 18.6V5.4Z"/><path d="M15.4 9.4a3.7 3.7 0 0 1 0 5.2M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="mute-slash" d="M4 4l16 16"/></svg><span data-i18n="muteAll">Mute</span></button>
         </div>
+        <div class="gain-row">
+          <label for="incoming-gain" data-i18n="participantLevel">Participant</label>
+          <input type="range" id="incoming-gain" min="0.1" max="8" step="0.1" value="1" data-i18n-title="gainIncomingHint" data-i18n-aria="gainIncomingHint">
+          <output id="incoming-gain-value" for="incoming-gain">1.0×</output>
+        </div>
+        <details class="tuning">
+          <summary data-i18n="fineTuning">Fine tuning</summary>
+          <div class="gain-row">
+            <label for="incoming-low-cut" data-i18n="lowCut">Low cut</label>
+            <input type="range" id="incoming-low-cut" min="0" max="300" step="10" value="0" data-i18n-title="lowCutHint" data-i18n-aria="lowCutHint">
+            <output id="incoming-low-cut-value" for="incoming-low-cut">Off</output>
+          </div>
+          <div class="gain-row">
+            <label for="incoming-clarity" data-i18n="clarity">Clarity</label>
+            <input type="range" id="incoming-clarity" min="0" max="12" step="0.5" value="0" data-i18n-title="clarityHint" data-i18n-aria="clarityHint">
+            <output id="incoming-clarity-value" for="incoming-clarity">Off</output>
+          </div>
+          <div class="gain-row">
+            <label for="incoming-high-cut" data-i18n="highCut">High cut</label>
+            <input type="range" id="incoming-high-cut" min="3000" max="20000" step="500" value="20000" data-i18n-title="highCutHint" data-i18n-aria="highCutHint">
+            <output id="incoming-high-cut-value" for="incoming-high-cut">Off</output>
+          </div>
+          <div class="gain-row">
+            <label for="incoming-pause" data-i18n="pauseTolerance">Pause</label>
+            <input type="range" id="incoming-pause" min="0" max="3000" step="100" value="0" data-i18n-title="pauseToleranceHint" data-i18n-aria="pauseToleranceHint">
+            <output id="incoming-pause-value" for="incoming-pause">Auto</output>
+          </div>
+        </details>
       </div>
     </div>
     <section class="live-transcript" id="live-transcript" aria-label="Live transcript" data-i18n-aria="liveTranscript">

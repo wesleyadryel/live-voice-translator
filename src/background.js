@@ -265,6 +265,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             outgoingInterpreterOff: Boolean(settings.outgoingInterpreterOff),
             outgoingOriginalOn: Boolean(settings.outgoingOriginalOn),
             outgoingMonitorOn: Boolean(settings.outgoingMonitorOn),
+            outgoingGain: settings.outgoingGain,
+            outgoingLowCutHz: settings.outgoingLowCutHz,
+            outgoingClarityDb: settings.outgoingClarityDb,
+            outgoingHighCutHz: settings.outgoingHighCutHz,
+            outgoingPauseMs: settings.outgoingPauseMs,
             autoPauseSeconds: settings.autoPauseSeconds,
             realtimeModel: settings.realtimeModel
           }
@@ -285,6 +290,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await setActionState(false, true);
       sendResponse({ ok: false, error: error.message });
     });
+    return true;
+  }
+
+  // Your own microphone is processed wherever it is captured: in the conference tab
+  // while WebRTC routing owns it, in the offscreen document otherwise. The
+  // participant's audio always comes from tab capture, so that half stays offscreen.
+  if (message.type === "SET_AUDIO") {
+    (async () => {
+      await ensureOffscreenDocument();
+      if (activeConferenceTabId && message.outgoing) {
+        await chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_SET_AUDIO", outgoing: message.outgoing }).catch(() => {});
+      }
+      sendResponse(await chrome.runtime.sendMessage({
+        target: "offscreen",
+        type: "SET_AUDIO",
+        outgoing: message.outgoing,
+        incoming: message.incoming
+      }));
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 

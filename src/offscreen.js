@@ -1,6 +1,7 @@
+import { clampClarity, clampGain, clampHighCut, clampLowCut, createAudioStage } from "./audio-gain.js";
 import { DEFAULT_SETTINGS } from "./config.js";
 import { t } from "./i18n.js";
-import { RealtimeTranslator } from "./realtime.js";
+import { clampPauseMs, RealtimeTranslator } from "./realtime.js";
 import { createSpeechGate } from "./speech-gate.js";
 
 const incomingOutput = document.querySelector("#incoming-output");
@@ -10,6 +11,13 @@ let incomingTranslator;
 let outgoingTranslator;
 let microphoneStream;
 let tabStream;
+// The raw streams stay separate from what is actually fed to the interpreters: the
+// capture tracks carry the lifecycle (a tab closing ends them), while each direction
+// gets one audio stage that everything downstream listens to.
+let microphoneInput = null;
+let tabInput = null;
+let outgoingStage = null;
+let incomingStage = null;
 let state = freshState();
 let meeting = null;
 let liveTranscript = [];
@@ -38,7 +46,6 @@ const pendingModels = new Map();
 const speechGates = new Map();
 const idleTimers = new Map();
 const idleParked = new Set();
-const passthroughs = new Map();
 let speakerRecorder = null;
 let speakerAudioChunks = [];
 let preparedCapture = null;
@@ -64,26 +71,14 @@ const SUMMARY_KEYS = ["overview", "topics", "decisions", "tasks", "deadlines", "
 function tr(settings, key, variables) { return t(settings.interfaceLanguage || "en", key, variables); }
 
 // tabCapture and the WebRTC bridge both divert audio away from its normal path,
-// so an untranslated voice is only audible while its passthrough is connected.
-function setPassthrough(key, enabled, stream, deviceId) {
-  let entry = passthroughs.get(key);
-  if (enabled) {
-    if (!stream) return;
-    if (!entry) {
-      const context = new AudioContext();
-      entry = { context, source: context.createMediaStreamSource(stream), connected: false };
-      if ("setSinkId" in context) context.setSinkId(!deviceId || deviceId === "default" ? "" : deviceId).catch(() => {});
-      passthroughs.set(key, entry);
-    }
-    if (entry.connected) return;
-    entry.source.connect(entry.context.destination);
-    entry.context.resume().catch(() => {});
-    entry.connected = true;
-    return;
-  }
-  if (!entry?.connected) return;
-  try { entry.source.disconnect(); } catch {}
-  entry.connected = false;
+// so an untranslated voice is only audible while its passthrough is connected. It
+// plays out of the direction's own audio stage rather than a context of its own:
+// two contexts in series run on independent clocks, and the drift between them is
+// heard as clicks in the voice the interpreter is also listening to.
+function setPassthrough(key, enabled, stage, deviceId) {
+  if (!stage) return;
+  stage.setSinkId(deviceId);
+  stage.setPassthrough(Boolean(enabled));
 }
 
 // Receives the conference tab's translated audio over a local loopback connection.
@@ -166,15 +161,6 @@ function waitForIceGathering(pc) {
   });
 }
 
-async function releasePassthroughs() {
-  const entries = [...passthroughs.values()];
-  passthroughs.clear();
-  for (const entry of entries) {
-    try { entry.source.disconnect(); } catch {}
-    await entry.context.close().catch(() => {});
-  }
-}
-
 // Mute only gates audio: the realtime sessions stay connected and the transcript
 // keeps filling, so history is never silently interrupted by a muted moment.
 // Silencing a translation swaps in the matching original voice; silencing a whole
@@ -190,13 +176,13 @@ function applyMuteState() {
   // the untranslated audio takes over until the speaker brings the session back.
   const incomingTranslationAudible = audioEnabled && !incomingInterpreterOff && !idleParked.has("incoming") && !incomingMuted && !incomingTranslationMuted;
   incomingOutput.muted = !incomingTranslationAudible;
-  setPassthrough("incoming", !incomingMuted && (incomingOriginalOn || !incomingTranslationAudible), tabStream, activeSettings.incomingDeviceId);
+  setPassthrough("incoming", !incomingMuted && (incomingOriginalOn || !incomingTranslationAudible), incomingStage, activeSettings.incomingDeviceId);
 
   // Solo routing plays the interpreter into the meeting's own output device. The
   // WebRTC path never reaches here: its conference tab swaps the sender instead.
   const outgoingTranslationAudible = audioEnabled && !outgoingInterpreterOff && !idleParked.has("outgoing") && !outgoingMuted && !outgoingTranslationMuted;
   outgoingOutput.muted = !outgoingTranslationAudible;
-  setPassthrough("outgoing", audioEnabled && !outgoingMuted && (outgoingOriginalOn || !outgoingTranslationAudible), microphoneStream, activeSettings.outgoingDeviceId);
+  setPassthrough("outgoing", audioEnabled && !outgoingMuted && (outgoingOriginalOn || !outgoingTranslationAudible), outgoingStage, activeSettings.outgoingDeviceId);
   // The panel's return-feed button is the explicit switch; monitorLevel in settings
   // stays responsible for how loud that return feed is.
   outgoingMonitor.muted = !outgoingTranslationAudible || !outgoingMonitorOn;
@@ -440,7 +426,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   stopMonitorFeed();
   stopReturnFeed();
   releaseSpeechGates();
-  await releasePassthroughs();
+  releaseAudioStages();
   clearLifecycleTimers();
   state = { ...state, active: false };
   incomingTranslator?.close();
@@ -529,7 +515,7 @@ function translatorOptions(settings, mode, outgoing) {
   return {
     apiKey: settings.apiKey,
     model: settings.realtimeModel,
-    inputStream: outgoing ? microphoneStream : tabStream,
+    inputStream: outgoing ? microphoneInput : tabInput,
     outputElement: outgoing ? outgoingOutput : incomingOutput,
     monitorElement: outgoing ? outgoingMonitor : null,
     from: forwards ? settings.sourceLanguage : settings.targetLanguage,
@@ -537,6 +523,9 @@ function translatorOptions(settings, mode, outgoing) {
     voice: outgoing ? settings.outgoingVoice : settings.incomingVoice,
     verbatim: !mode.audio,
     manualChunkMs: mediaCapture ? 6000 : 0,
+    // Read from the live settings rather than the ones the session started with, so
+    // a window widened during the call survives a reconnect.
+    pauseMs: clampPauseMs(activeSettings[outgoing ? "outgoingPauseMs" : "incomingPauseMs"]),
     onTranscript: (text) => {
       if (mode.audio && text) state.translatedUtteranceCount += 1;
       addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant");
@@ -600,6 +589,59 @@ function releaseSpeechGates() {
   for (const timer of idleTimers.values()) clearTimeout(timer);
   idleTimers.clear();
   idleParked.clear();
+}
+
+// A side that is too quiet at its own source stays too quiet for the interpreter,
+// so each direction gets its own level control. The stage is always built, even at
+// 1x: that is what lets the slider act on a running call instead of forcing a
+// restart, and it is also the single audio context that direction runs on.
+// Each direction is tuned on its own: the two sides of a call rarely arrive with the
+// same problem, and the participant's audio is the one nobody can fix at its source.
+function directionTuning(settings, direction) {
+  return {
+    gain: clampGain(settings[`${direction}Gain`]),
+    lowCutHz: clampLowCut(settings[`${direction}LowCutHz`]),
+    clarityDb: clampClarity(settings[`${direction}ClarityDb`]),
+    highCutHz: clampHighCut(settings[`${direction}HighCutHz`]),
+    pauseMs: clampPauseMs(settings[`${direction}PauseMs`])
+  };
+}
+
+function applyAudioStages(settings) {
+  releaseAudioStages();
+  outgoingStage = microphoneStream ? createAudioStage(microphoneStream, { ...directionTuning(settings, "outgoing"), deviceId: settings.outgoingDeviceId }) : null;
+  microphoneInput = outgoingStage?.stream || microphoneStream || null;
+  incomingStage = tabStream ? createAudioStage(tabStream, { ...directionTuning(settings, "incoming"), deviceId: settings.incomingDeviceId }) : null;
+  tabInput = incomingStage?.stream || tabStream || null;
+}
+
+function releaseAudioStages() {
+  outgoingStage?.close();
+  incomingStage?.close();
+  outgoingStage = incomingStage = microphoneInput = tabInput = null;
+}
+
+// The filters live in the audio graph and the pause window lives in the realtime
+// session, so a single slider move lands in one of two places — both of them on the
+// running call, which is the only time anyone can tell whether it helped.
+function applyTuning(direction, tuning = {}) {
+  const next = { ...activeSettings };
+  for (const [field, key, clamp] of [
+    ["gain", "Gain", clampGain],
+    ["lowCutHz", "LowCutHz", clampLowCut],
+    ["clarityDb", "ClarityDb", clampClarity],
+    ["highCutHz", "HighCutHz", clampHighCut],
+    ["pauseMs", "PauseMs", clampPauseMs]
+  ]) {
+    if (tuning[field] === undefined) continue;
+    next[`${direction}${key}`] = clamp(tuning[field]);
+  }
+  activeSettings = next;
+  const stage = direction === "outgoing" ? outgoingStage : incomingStage;
+  stage?.setTuning(tuning);
+  if (tuning.pauseMs === undefined) return;
+  const translator = direction === "outgoing" ? outgoingTranslator : incomingTranslator;
+  translator?.setPauseMs(next[`${direction}PauseMs`]);
 }
 
 function autoPauseSeconds() {
@@ -680,7 +722,10 @@ async function start(suppliedSettings = {}) {
       microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
     }
     tabStream = await takePreparedCapture(settings.captureTabId);
-    if (mode.notes && settings.speakerDiarization) startSpeakerRecording(tabStream);
+    // Applied before anything else listens, so the interpreter, the speech gate,
+    // the untranslated passthrough and the recording all hear the same level.
+    applyAudioStages(settings);
+    if (mode.notes && settings.speakerDiarization) startSpeakerRecording(tabInput);
     tabStream.getTracks().forEach((track) => { track.onended = () => { if (state.active) stop({ reason: "tab_closed", notify: true }); }; });
     await applySink(outgoingOutput, settings.outgoingDeviceId);
     await applySink(incomingOutput, settings.incomingDeviceId);
@@ -708,8 +753,8 @@ async function start(suppliedSettings = {}) {
     await connectPair(settings, mode);
     // The gate runs on every eligible side, parked or not: it is what notices the
     // speech that brings a parked session back.
-    if (outgoingInterpreterEligible(settings)) setupSpeechGate("outgoing", microphoneStream);
-    setupSpeechGate("incoming", tabStream);
+    if (outgoingInterpreterEligible(settings)) setupSpeechGate("outgoing", outgoingStage?.analyser || microphoneInput);
+    setupSpeechGate("incoming", incomingStage?.analyser || tabInput);
     state.phase = "live";
     sessionTimer = setTimeout(() => stop({ reason: "limit", notify: true }), Math.max(1, Number(settings.maxSessionMinutes) || 90) * 60000);
     return { ok: true, state };
@@ -741,6 +786,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then((answerSdp) => sendResponse({ ok: true, answerSdp }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
+  }
+  // Applied to the live graph and the live session, so audio that turns out to be
+  // unintelligible can be corrected mid-call without dropping the interpreter.
+  if (message.type === "SET_AUDIO") {
+    for (const direction of ["outgoing", "incoming"]) {
+      if (message[direction]) applyTuning(direction, message[direction]);
+    }
+    sendResponse({ ok: true });
+    return false;
   }
   if (message.type === "SET_MUTE") {
     if (typeof message.outgoingMuted === "boolean") outgoingMuted = message.outgoingMuted;

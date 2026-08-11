@@ -1,10 +1,15 @@
-import { RealtimeTranslator } from "./realtime.js";
+import { clampClarity, clampGain, clampHighCut, clampLowCut, createAudioStage } from "./audio-gain.js";
+import { clampPauseMs, RealtimeTranslator } from "./realtime.js";
 import { createSpeechGate } from "./speech-gate.js";
 
 const OUTPUT_ELEMENT_ID = "live-voice-translated-output";
 const ORIGINAL_ELEMENT_ID = "live-voice-original-output";
 let translator = null;
 let microphoneStream = null;
+// The capture keeps the microphone's own lifecycle; everything downstream listens
+// to the boosted copy, so a quiet microphone can be lifted before it is streamed.
+let microphoneInput = null;
+let audioStage = null;
 let outputElement = null;
 let originalElement = null;
 let currentSettings = null;
@@ -97,8 +102,8 @@ function setupSpeechGate() {
   releaseSpeechGate();
   idleParked = parked;
   const idleSeconds = Math.max(0, Number(currentSettings?.autoPauseSeconds) || 0);
-  if (!idleSeconds || !microphoneStream) return;
-  speechGate = createSpeechGate(microphoneStream, {
+  if (!idleSeconds || !microphoneInput) return;
+  speechGate = createSpeechGate(audioStage?.analyser || microphoneInput, {
     onSpeechStart: () => {
       clearTimeout(idleTimer);
       idleTimer = null;
@@ -124,7 +129,7 @@ async function applyInterpreterState() {
     translator = null;
     return;
   }
-  if (translator || !microphoneStream || !outputElement) return;
+  if (translator || !microphoneInput || !outputElement) return;
   translator = createTranslator(currentSettings, outputElement);
   await translator.connect();
 }
@@ -178,6 +183,9 @@ async function stopOutgoing({ restore = true } = {}) {
   stopReturnFeed();
   translator?.close();
   translator = null;
+  audioStage?.close();
+  audioStage = null;
+  microphoneInput = null;
   microphoneStream?.getTracks().forEach((track) => track.stop());
   microphoneStream = null;
   outputElement?.remove();
@@ -193,11 +201,12 @@ async function stopOutgoing({ restore = true } = {}) {
 function createTranslator(settings, audio) {
   return new RealtimeTranslator({
     model: settings.realtimeModel,
-    inputStream: microphoneStream,
+    inputStream: microphoneInput,
     outputElement: audio,
     from: settings.sourceLanguage,
     to: settings.targetLanguage,
     voice: settings.outgoingVoice,
+    pauseMs: clampPauseMs(settings.outgoingPauseMs),
     exchangeSdp,
     onOutputTrack: () => {
       dispatch("live-voice:translated-track", { elementId: OUTPUT_ELEMENT_ID });
@@ -232,7 +241,16 @@ async function startOutgoing(settings) {
       // out of the speakers is picked back up and fed to the interpreter.
       audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false }
     });
-    publishOriginalTrack(microphoneStream);
+    // The boost is applied once, here: the interpreter, the speech gate and the
+    // untranslated voice the participant hears all read the same corrected level.
+    audioStage = createAudioStage(microphoneStream, {
+      gain: clampGain(settings.outgoingGain),
+      lowCutHz: clampLowCut(settings.outgoingLowCutHz),
+      clarityDb: clampClarity(settings.outgoingClarityDb),
+      highCutHz: clampHighCut(settings.outgoingHighCutHz)
+    });
+    microphoneInput = audioStage.stream;
+    publishOriginalTrack(microphoneInput);
     applyOutgoingMode();
     const audio = ensureOutputElement();
     audio.muted = true;
@@ -292,6 +310,17 @@ export async function handleConferenceMessage(message) {
   if (message.type === "CONFERENCE_RETURN_STOP") { stopReturnFeed(); return { ok: true }; }
   if (message.type === "CONFERENCE_START_OUTGOING") return startOutgoing(message.settings || {});
   if (message.type === "CONFERENCE_STOP_OUTGOING") return stopOutgoing();
+  if (message.type === "CONFERENCE_SET_AUDIO") {
+    const tuning = message.outgoing || {};
+    audioStage?.setTuning(tuning);
+    if (currentSettings) {
+      for (const [field, key] of [["gain", "outgoingGain"], ["lowCutHz", "outgoingLowCutHz"], ["clarityDb", "outgoingClarityDb"], ["highCutHz", "outgoingHighCutHz"], ["pauseMs", "outgoingPauseMs"]]) {
+        if (tuning[field] !== undefined) currentSettings[key] = tuning[field];
+      }
+    }
+    if (tuning.pauseMs !== undefined) translator?.setPauseMs(tuning.pauseMs);
+    return { ok: true };
+  }
   if (message.type === "CONFERENCE_SET_MUTE") {
     if (typeof message.outgoingMuted === "boolean") outgoingMuted = message.outgoingMuted;
     if (typeof message.outgoingTranslationMuted === "boolean") outgoingTranslationMuted = message.outgoingTranslationMuted;

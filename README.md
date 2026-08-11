@@ -44,6 +44,12 @@ call: **Translation**, **Notes**, **Translation + Notes**, or **Transcript**.
   translation to fall back to the untranslated voice, add the original voice to hear
   or send both at once, or mute a whole direction for real silence. Only switching an
   interpreter off pauses that side's transcript
+- **Per-direction audio tuning**, applied to the call already running: a level
+  slider for a microphone set too low or too loud at its source, a low cut for
+  rumble and mains hum, a clarity band for the consonants that carry
+  intelligibility, a high cut for hiss and interference, and a pause window that
+  says how long a silence may last before the phrase is treated as finished — the
+  setting that stops a speaker who pauses between words from being cut mid-thought
 - **Return feed**: hear the translated voice the participant is actually receiving,
   so you can tell how you are coming across
 - **Pays only for speech**: each direction closes its realtime session while nobody

@@ -1,5 +1,7 @@
+import { clampClarity, clampGain, clampHighCut, clampLowCut, CLARITY_OFF, HIGH_CUT_OFF, LOW_CUT_OFF, UNITY_GAIN } from "./audio-gain.js";
 import { loadSettings, maskKey, saveSettings } from "./config.js";
 import { languageName, localizePage, t } from "./i18n.js";
+import { clampPauseMs, PAUSE_AUTO_MS } from "./realtime.js";
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -9,7 +11,7 @@ const elements = {
   setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"),
   modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages"),
   transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
-  sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"),
+  sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"), muteButtonsOutgoing: $("#mute-buttons-outgoing"),
   muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), addOutgoingMonitor: $("#add-outgoing-monitor"), muteOutgoing: $("#mute-outgoing"),
   muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), addIncomingReturn: $("#add-incoming-return"), muteIncoming: $("#mute-incoming")
 };
@@ -35,6 +37,7 @@ let activeTabUrl = "";
 let outgoingRouteStatus = null;
 let liveTranscript = [];
 let transcriptSignature = "";
+let gainAdjusting = false;
 const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMonitorOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingReturnOn", "incomingMuted"];
 let mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, false]));
 
@@ -176,7 +179,12 @@ async function renderPreflight(settings) {
 // translation, so those rows and buttons drop out instead of lying about effect.
 function renderMuteControls() {
   const translatesAloud = ["translation", "both"].includes(currentMode) || activeCaptureKind === "media";
-  elements.muteRowOutgoing.hidden = !translatesAloud || activeCaptureKind === "media";
+  // A media tab has no microphone at all, so that side disappears entirely. In the
+  // note-only modes the microphone is still captured and still transcribed — only
+  // the buttons that route a translated voice have nothing to act on, so they go and
+  // the level control for that microphone stays.
+  elements.muteRowOutgoing.hidden = activeCaptureKind === "media";
+  elements.muteButtonsOutgoing.hidden = !translatesAloud;
   elements.muteIncomingTranslation.hidden = !translatesAloud;
   elements.muteIncomingInterpreter.hidden = !translatesAloud;
   // A control is inert when a broader one already decides its outcome. The original
@@ -219,6 +227,45 @@ function renderMuteControls() {
     button.title = label;
     button.disabled = busy || Boolean(overrides[key]);
   }
+}
+
+// Audio that cannot be understood is rarely fixed by one knob: the level decides
+// whether the interpreter hears the voice at all, the filters decide whether the
+// words inside it are distinct, and the pause window decides where a phrase is
+// considered to end. All of them apply to the running call, because none of them can
+// be judged except while someone is talking.
+const AUDIO_CONTROLS = [
+  { id: "gain", field: "gain", suffix: "Gain", clamp: clampGain, reset: UNITY_GAIN, format: (value) => `${value.toFixed(1)}×` },
+  { id: "low-cut", field: "lowCutHz", suffix: "LowCutHz", clamp: clampLowCut, reset: LOW_CUT_OFF, format: (value) => (value <= LOW_CUT_OFF ? t(locale, "filterOff") : `${Math.round(value)} Hz`) },
+  { id: "clarity", field: "clarityDb", suffix: "ClarityDb", clamp: clampClarity, reset: CLARITY_OFF, format: (value) => (value <= CLARITY_OFF ? t(locale, "filterOff") : `+${value.toFixed(1)} dB`) },
+  { id: "high-cut", field: "highCutHz", suffix: "HighCutHz", clamp: clampHighCut, reset: HIGH_CUT_OFF, format: (value) => (value >= HIGH_CUT_OFF ? t(locale, "filterOff") : `${(value / 1000).toFixed(1)} kHz`) },
+  { id: "pause", field: "pauseMs", suffix: "PauseMs", clamp: clampPauseMs, reset: PAUSE_AUTO_MS, format: (value) => (value <= PAUSE_AUTO_MS ? t(locale, "pauseAuto") : `${(value / 1000).toFixed(1)} s`) }
+];
+
+const AUDIO_FIELDS = ["outgoing", "incoming"].flatMap((direction) => AUDIO_CONTROLS.map((control) => ({
+  ...control,
+  direction,
+  key: `${direction}${control.suffix}`,
+  slider: $(`#${direction}-${control.id}`),
+  output: $(`#${direction}-${control.id}-value`)
+})));
+
+function renderAudio(settings) {
+  // Status refreshes run on a timer; writing a slider back mid-drag would fight the
+  // user's hand.
+  if (gainAdjusting) return;
+  for (const field of AUDIO_FIELDS) {
+    const value = field.clamp(settings[field.key]);
+    field.slider.value = String(value);
+    field.output.textContent = field.format(value);
+  }
+}
+
+async function changeAudio(field, rawValue) {
+  const value = field.clamp(rawValue);
+  currentSettings[field.key] = value;
+  field.output.textContent = field.format(value);
+  if (active) await chrome.runtime.sendMessage({ type: "SET_AUDIO", [field.direction]: { [field.field]: value } });
 }
 
 function render(state = currentState) {
@@ -324,6 +371,7 @@ async function refresh() {
   elements.target.textContent = languageLabel(languages.target);
   elements.setup.hidden = Boolean(settings.apiKey);
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
+  renderAudio(settings);
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   liveTranscript = Array.isArray(result?.liveTranscript) ? result.liveTranscript : [];
   preparedTabId = result?.preparedTabId || null;
@@ -445,6 +493,28 @@ for (const [button, key] of [
   [elements.muteIncoming, "incomingMuted"]
 ]) {
   button.addEventListener("click", () => { toggleMute(key).catch(() => refresh()); });
+}
+for (const field of AUDIO_FIELDS) {
+  field.slider.addEventListener("pointerdown", () => { gainAdjusting = true; });
+  field.slider.addEventListener("input", () => {
+    gainAdjusting = true;
+    changeAudio(field, field.slider.value).catch(() => {});
+  });
+  // Stored only when the user settles on a value, so a drag does not write on every
+  // intermediate step; the live audio already followed it through input.
+  field.slider.addEventListener("change", async () => {
+    gainAdjusting = false;
+    await saveSettings({ [field.key]: field.clamp(field.slider.value) }).catch(() => {});
+  });
+  field.slider.addEventListener("blur", () => { gainAdjusting = false; });
+  // Untouched is a single point on a continuous range and hard to hit by dragging,
+  // so it stays one gesture away.
+  field.slider.addEventListener("dblclick", async () => {
+    gainAdjusting = false;
+    field.slider.value = String(field.reset);
+    await changeAudio(field, field.reset).catch(() => {});
+    await saveSettings({ [field.key]: field.reset }).catch(() => {});
+  });
 }
 elements.interfaceLanguage.addEventListener("change", async () => { await saveSettings({ interfaceLanguage: elements.interfaceLanguage.value }); await refresh(); });
 elements.sourceLanguage.addEventListener("change", async () => {

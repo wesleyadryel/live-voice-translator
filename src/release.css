@@ -50,7 +50,16 @@ body.panel-shell {
   min-height: 0;
   margin: 8px auto;
   padding: 12px 14px;
-  overflow: hidden;
+  /* The workspace stays the size of the viewport, but the controls inside it are no
+     longer guaranteed to fit: the per-direction tuning can be expanded on both
+     sides. Clipping it left those sliders unreachable, so the panel scrolls once its
+     contents outgrow it — the transcript keeps its own scroll and only gives up
+     space down to its minimum. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113,135,169,.28) transparent;
   border: 1px solid rgba(255,255,255,.82);
   border-radius: 18px;
   background: linear-gradient(145deg, rgba(255,255,255,.76), rgba(247,250,255,.48));
@@ -59,6 +68,12 @@ body.panel-shell {
   backdrop-filter: blur(28px) saturate(145%);
   animation: panel-in 360ms var(--ease) both;
 }
+/* A flex column shrinks its children before it ever scrolls, so once the panel held
+   more than it could show, every section above the transcript was squashed to the
+   wrong height instead. Only the transcript may give up space; the rest keep their
+   own height and the panel scrolls. The transcript re-states its own flex further
+   down, which is what keeps it the one that stretches. */
+.control-panel > * { flex: none; }
 
 .mac-toolbar {
   display: flex;
@@ -344,6 +359,9 @@ body.panel-shell {
 .mute-row[hidden] { display: none; }
 .mute-row-label { overflow: hidden; color: var(--secondary); font-size: 10px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .mute-buttons { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 5px; }
+/* A class-level display outranks the browser's [hidden] rule, so a row toggled from
+   JS has to opt back in or it ignores the attribute entirely. */
+.mute-buttons[hidden] { display: none; }
 .mute-button {
   display: inline-flex;
   align-items: center;
@@ -371,6 +389,52 @@ body.panel-shell {
 .mute-button[aria-pressed="true"] .mute-slash { opacity: 1; }
 /* An "add" toggle turns something on, so pressed is an accent state, not a warning. */
 .add-button[aria-pressed="true"] { border-color: rgba(38,116,237,.42); background: rgba(38,116,237,.12); color: var(--accent); }
+/* Collapsed by default: most calls never need these, and the panel has to stay
+   readable for the ones that do not.
+   The element keeps its own display: overriding it to grid or flex is what makes
+   Chrome render the contents of a closed <details>, so the rows are spaced from the
+   inside instead. */
+.tuning[open] { padding-bottom: 2px; }
+.tuning .gain-row { margin-top: 4px; }
+.tuning summary { color: var(--secondary); font-size: 10px; font-weight: 620; cursor: pointer; list-style: none; }
+.tuning summary::-webkit-details-marker { display: none; }
+.tuning summary::before { content: "›"; display: inline-block; margin-right: 4px; transition: transform 150ms var(--ease); }
+.tuning[open] summary::before { transform: rotate(90deg); }
+.tuning summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.gain-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 0 2px; }
+.gain-row label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gain-row label { color: var(--secondary); font-size: 10px; font-weight: 620; }
+.gain-row output { min-width: 46px; color: var(--secondary); font-size: 10px; font-weight: 620; font-variant-numeric: tabular-nums; text-align: right; }
+.gain-row input[type="range"] {
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.gain-row input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: rgba(130,151,184,.32); }
+/* 1x is where the level is untouched, so that track marks it: the range runs from
+   0.1 to 8, which puts that point at (1 - 0.1) / 7.9 of the way along. The other
+   sliders are off at one end, so their neutral point needs no mark. */
+#outgoing-gain::-webkit-slider-runnable-track,
+#incoming-gain::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, rgba(130,151,184,.32) 0 calc(11.4% - 1px), rgba(130,151,184,.8) calc(11.4% - 1px) calc(11.4% + 1px), rgba(130,151,184,.32) calc(11.4% + 1px));
+}
+.gain-row input[type="range"]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 1px solid rgba(38,116,237,.5);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(20,40,80,.28);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.gain-row input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .live-transcript {
   display: flex;
   flex: 1 1 150px;

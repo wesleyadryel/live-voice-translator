@@ -11,6 +11,24 @@ const LANGUAGE_CODES = {
 
 export const isRealtimeTranslateModel = (model) => /translate/i.test(String(model || ""));
 
+// 0 leaves the model's own semantic detector in charge: it ends a turn when the
+// sentence sounds finished, which suits continuous speech. A speaker who leaves
+// gaps between words gets cut mid-thought by that, so any value above 0 replaces it
+// with a plain silence window — the one setting that states outright how long a
+// pause may be before the phrase is considered over.
+export const PAUSE_AUTO_MS = 0;
+export const MIN_PAUSE_MS = 300;
+export const MAX_PAUSE_MS = 3000;
+
+export function clampPauseMs(value) {
+  const ms = Math.round(Number(value));
+  // Only 0 means automatic. Anything the user actually dialled in is honoured as a
+  // window, raised to the shortest one worth having rather than falling back to a
+  // detector they were trying to get away from.
+  if (!Number.isFinite(ms) || ms <= 0) return PAUSE_AUTO_MS;
+  return Math.min(MAX_PAUSE_MS, Math.max(MIN_PAUSE_MS, ms));
+}
+
 export const languageCode = (language) => LANGUAGE_CODES[language] || String(language || "en").slice(0, 2).toLowerCase();
 
 export const realtimeUrl = (model) => {
@@ -20,7 +38,7 @@ export const realtimeUrl = (model) => {
 };
 
 export class RealtimeTranslator {
-  constructor({ apiKey, model, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, onOutputTrack, onUsage, exchangeSdp, verbatim = false, manualChunkMs = 0 }) {
+  constructor({ apiKey, model, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onDisconnect, onOutputTrack, onUsage, exchangeSdp, verbatim = false, manualChunkMs = 0, pauseMs = PAUSE_AUTO_MS }) {
     this.model = model || DEFAULT_REALTIME_MODEL;
     this.apiKey = apiKey;
     this.inputStream = inputStream;
@@ -37,6 +55,7 @@ export class RealtimeTranslator {
     this.exchangeSdp = exchangeSdp || null;
     this.verbatim = verbatim;
     this.manualChunkMs = manualChunkMs;
+    this.pauseMs = clampPauseMs(pauseMs);
     this.transcriptBuffer = "";
     this.pc = null;
     this.dataChannel = null;
@@ -81,6 +100,40 @@ export class RealtimeTranslator {
     });
   }
 
+  turnDetection() {
+    if (this.manualChunkMs) return null;
+    // A fixed silence window: the turn only ends after this much quiet, so a speaker
+    // who pauses between words keeps the floor instead of having the phrase closed
+    // and translated in halves. prefix_padding keeps the attack of the first word,
+    // which is otherwise clipped off the front of the utterance.
+    if (this.pauseMs) {
+      return {
+        type: "server_vad",
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: this.pauseMs,
+        create_response: true,
+        interrupt_response: true
+      };
+    }
+    return {
+      type: "semantic_vad",
+      eagerness: "medium",
+      create_response: true,
+      interrupt_response: true
+    };
+  }
+
+  // Turn detection can be replaced on a live session, so the setting takes effect on
+  // the call being complained about rather than the next one.
+  setPauseMs(value) {
+    const next = clampPauseMs(value);
+    if (next === this.pauseMs) return;
+    this.pauseMs = next;
+    if (this.dataChannel?.readyState !== "open" || this.usesTranslateSession()) return;
+    this.dataChannel.send(JSON.stringify(this.sessionUpdatePayload()));
+  }
+
   sessionUpdatePayload() {
     if (this.usesTranslateSession()) {
       return {
@@ -100,12 +153,7 @@ export class RealtimeTranslator {
         output_modalities: this.verbatim ? ["text"] : ["audio"],
         audio: {
           input: {
-            turn_detection: this.manualChunkMs ? null : {
-              type: "semantic_vad",
-              eagerness: "medium",
-              create_response: true,
-              interrupt_response: true
-            }
+            turn_detection: this.turnDetection()
           },
           output: { voice: this.voice }
         },

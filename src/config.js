@@ -12,6 +12,20 @@ export const DEFAULT_SETTINGS = {
   outgoingDeviceId: "default",
   incomingDeviceId: "default",
   monitorLevel: "off",
+  // Per-direction audio tuning, applied before that side reaches the interpreter.
+  // Gain multiplies it (1 is untouched); the filters shape the band speech lives in
+  // (0 / 0 / 20000 all mean "do nothing"); pauseMs decides how long a silence may be
+  // before the phrase is treated as finished (0 leaves the model's own detector on).
+  outgoingGain: 1,
+  outgoingLowCutHz: 0,
+  outgoingClarityDb: 0,
+  outgoingHighCutHz: 20000,
+  outgoingPauseMs: 0,
+  incomingGain: 1,
+  incomingLowCutHz: 0,
+  incomingClarityDb: 0,
+  incomingHighCutHz: 20000,
+  incomingPauseMs: 0,
   outgoingMuted: false,
   outgoingTranslationMuted: false,
   incomingMuted: false,

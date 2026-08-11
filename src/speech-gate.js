@@ -4,17 +4,24 @@
 // only while someone is actually talking.
 const SAMPLE_INTERVAL_MS = 100;
 
-export function createSpeechGate(stream, { onSpeechStart, onSpeechEnd, threshold = 0.012, releaseMs = 900 } = {}) {
+// Accepts either a stream or an analyser that already sits in the direction's audio
+// graph. The analyser is preferred: building a second context around a stream that
+// came out of the first one gives the two independent clocks, and the drift between
+// them is heard as clicks in everything downstream.
+export function createSpeechGate(input, { onSpeechStart, onSpeechEnd, threshold = 0.012, releaseMs = 900 } = {}) {
+  const provided = typeof input?.getFloatTimeDomainData === "function" ? input : null;
   const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
-  const track = stream?.getAudioTracks?.()[0];
-  if (!AudioContextClass || !track) return { get speaking() { return true; }, close() {} };
+  const track = provided ? null : input?.getAudioTracks?.()[0];
+  if (!provided && (!AudioContextClass || !track)) return { get speaking() { return true; }, close() {} };
 
-  const context = new AudioContextClass();
-  const source = context.createMediaStreamSource(stream);
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 512;
-  source.connect(analyser);
-  context.resume?.().catch(() => {});
+  const context = provided ? null : new AudioContextClass();
+  const source = context ? context.createMediaStreamSource(input) : null;
+  const analyser = provided || context.createAnalyser();
+  if (!provided) {
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    context.resume?.().catch(() => {});
+  }
 
   const samples = new Float32Array(analyser.fftSize);
   let speaking = false;
@@ -50,6 +57,8 @@ export function createSpeechGate(stream, { onSpeechStart, onSpeechEnd, threshold
     close() {
       closed = true;
       clearTimeout(timer);
+      // A borrowed analyser belongs to the audio stage, which closes its own context.
+      if (!context) return;
       try { source.disconnect(); } catch {}
       context.close().catch(() => {});
     }
