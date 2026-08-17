@@ -19,6 +19,21 @@ export const MIN_GAIN = 0.1;
 export const UNITY_GAIN = 1;
 export const MAX_GAIN = 8;
 
+// The level above corrects what the interpreter is given to hear. How loud that same
+// voice arrives on the other side is a different question with a different answer: a
+// microphone can be lifted enough to be transcribed cleanly and still be too loud for
+// the person listening, or the reverse. This is the second stage, applied after the
+// first, and it is the only one the participant hears.
+export const MIN_VOICE_GAIN = 0;
+export const MAX_VOICE_GAIN = 4;
+
+// The level you listen at only ever comes down. Sending has to compensate for a
+// microphone nobody can reach; listening does not, because the voice you hear is
+// either the participant already lifted by the level the interpreter hears, or a synthesised
+// one that arrives at a fixed level. Above 1 there is nothing to gain and an element's
+// own volume cannot go there anyway, so the range stops at untouched.
+export const MAX_LISTEN_LEVEL = 1;
+
 // Speech that is hard to make out is rarely fixed by volume alone. These three
 // shape the band the words actually live in: rumble and hum below it, the
 // consonants that carry intelligibility inside it, hiss and interference above it.
@@ -44,6 +59,8 @@ function clampRange(value, min, max, fallback) {
 }
 
 export function clampGain(value) { return clampRange(value, MIN_GAIN, MAX_GAIN, UNITY_GAIN); }
+export function clampVoiceGain(value) { return clampRange(value, MIN_VOICE_GAIN, MAX_VOICE_GAIN, UNITY_GAIN); }
+export function clampListenLevel(value) { return clampRange(value, MIN_VOICE_GAIN, MAX_LISTEN_LEVEL, UNITY_GAIN); }
 export function clampLowCut(value) { return clampRange(value, LOW_CUT_OFF, MAX_LOW_CUT, LOW_CUT_OFF); }
 export function clampClarity(value) { return clampRange(value, CLARITY_OFF, MAX_CLARITY, CLARITY_OFF); }
 export function clampHighCut(value) { return clampRange(value, MIN_HIGH_CUT, HIGH_CUT_OFF, HIGH_CUT_OFF); }
@@ -56,7 +73,7 @@ function captureSampleRate(track) {
 // Used when there is nothing to build a graph with: the untouched stream is still
 // the correct input, so no caller has to special-case a missing stage.
 function passiveStage(stream) {
-  return { stream, analyser: null, setTuning() {}, setSinkId() {}, setPassthrough() {}, close() {} };
+  return { stream, voiceStream: stream, analyser: null, setTuning() {}, setSinkId() {}, setPassthrough() {}, close() {} };
 }
 
 export function createAudioStage(stream, tuning = {}) {
@@ -99,6 +116,19 @@ export function createAudioStage(stream, tuning = {}) {
   const analyser = context.createAnalyser();
   analyser.fftSize = 512;
 
+  // Branch, not a further stage in the same line: what the interpreter transcribes
+  // must not move when the level going out is changed. It hangs off the same context
+  // as everything else — a second one would clock independently and be heard as
+  // clicks — and carries its own limiter, since a boost here can clip just as the
+  // first one can.
+  const voiceGainNode = context.createGain();
+  const voiceLimiter = context.createDynamicsCompressor();
+  voiceLimiter.knee.value = 0;
+  voiceLimiter.ratio.value = 20;
+  voiceLimiter.attack.value = 0.003;
+  voiceLimiter.release.value = 0.25;
+  const voiceDestination = context.createMediaStreamDestination();
+
   let currentGain = UNITY_GAIN;
   let passthrough = false;
   let sink = "";
@@ -110,6 +140,9 @@ export function createAudioStage(stream, tuning = {}) {
   gainNode.connect(limiter);
   limiter.connect(destination);
   limiter.connect(analyser);
+  limiter.connect(voiceGainNode);
+  voiceGainNode.connect(voiceLimiter);
+  voiceLimiter.connect(voiceDestination);
   context.resume?.().catch(() => {});
 
   function ramp(param, value, immediate) {
@@ -125,11 +158,16 @@ export function createAudioStage(stream, tuning = {}) {
 
   // Each control is applied only when it is actually given, so a partial update —
   // one slider moving — never resets the rest of the direction to its defaults.
-  function applyTuning({ gain, lowCutHz, clarityDb, highCutHz }, immediate = false) {
+  function applyTuning({ gain, voiceGain, lowCutHz, clarityDb, highCutHz }, immediate = false) {
     if (gain !== undefined) {
       currentGain = clampGain(gain);
       ramp(gainNode.gain, currentGain, immediate);
       ramp(limiter.threshold, currentGain > UNITY_GAIN ? -2 : 0, immediate);
+    }
+    if (voiceGain !== undefined) {
+      const level = clampVoiceGain(voiceGain);
+      ramp(voiceGainNode.gain, level, immediate);
+      ramp(voiceLimiter.threshold, level > UNITY_GAIN ? -2 : 0, immediate);
     }
     // A highpass at 10 Hz is below anything a microphone captures, so "off" stays a
     // real position on the slider without having to rewire the graph.
@@ -140,6 +178,7 @@ export function createAudioStage(stream, tuning = {}) {
 
   applyTuning({
     gain: tuning.gain ?? UNITY_GAIN,
+    voiceGain: tuning.voiceGain ?? UNITY_GAIN,
     lowCutHz: tuning.lowCutHz ?? LOW_CUT_OFF,
     clarityDb: tuning.clarityDb ?? CLARITY_OFF,
     highCutHz: tuning.highCutHz ?? HIGH_CUT_OFF
@@ -147,6 +186,9 @@ export function createAudioStage(stream, tuning = {}) {
 
   return {
     stream: destination.stream,
+    // What leaves for the other side. The interpreter never listens through this one,
+    // so turning it down does not make this side harder to transcribe.
+    voiceStream: voiceDestination.stream,
     analyser,
     setTuning(values) { applyTuning(values || {}); },
     setSinkId(nextDeviceId) {
@@ -160,16 +202,18 @@ export function createAudioStage(stream, tuning = {}) {
     setPassthrough(enabled) {
       if (Boolean(enabled) === passthrough) return;
       passthrough = Boolean(enabled);
+      // Taken from the outgoing branch, so the voice played out loud is the same one
+      // the other side is being sent — including how loud it was set to be.
       if (passthrough) {
-        limiter.connect(context.destination);
+        voiceLimiter.connect(context.destination);
         context.resume?.().catch(() => {});
         return;
       }
-      try { limiter.disconnect(context.destination); } catch {}
+      try { voiceLimiter.disconnect(context.destination); } catch {}
     },
     close() {
       try {
-        for (const node of [source, lowCut, clarity, highCut, gainNode, limiter]) node.disconnect();
+        for (const node of [source, lowCut, clarity, highCut, gainNode, limiter, voiceGainNode, voiceLimiter]) node.disconnect();
       } catch {}
       context.close().catch(() => {});
     }

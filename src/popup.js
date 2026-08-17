@@ -1,4 +1,4 @@
-import { clampClarity, clampGain, clampHighCut, clampLowCut, CLARITY_OFF, HIGH_CUT_OFF, LOW_CUT_OFF, UNITY_GAIN } from "./audio-gain.js";
+import { clampClarity, clampGain, clampHighCut, clampListenLevel, clampLowCut, clampVoiceGain, CLARITY_OFF, HIGH_CUT_OFF, LOW_CUT_OFF, MIN_VOICE_GAIN, UNITY_GAIN } from "./audio-gain.js";
 import { loadSettings, maskKey, saveSettings } from "./config.js";
 import { languageName, localizePage, t } from "./i18n.js";
 import { clampPauseMs, PAUSE_AUTO_MS } from "./realtime.js";
@@ -236,19 +236,30 @@ function renderMuteControls() {
 // be judged except while someone is talking.
 const AUDIO_CONTROLS = [
   { id: "gain", field: "gain", suffix: "Gain", clamp: clampGain, reset: UNITY_GAIN, format: (value) => `${value.toFixed(1)}×` },
+  // Sending level, not listening level: it decides how loud you arrive on the other
+  // side and nothing else, so it exists for your own microphone only. Zero is a real
+  // position — the participant hears nothing of your untranslated voice — while the
+  // interpreter carries on transcribing it.
+  { id: "voice", field: "voiceGain", suffix: "VoiceGain", clamp: clampVoiceGain, reset: UNITY_GAIN, directions: ["outgoing"], format: (value) => (value <= MIN_VOICE_GAIN ? t(locale, "filterOff") : `${value.toFixed(1)}×`) },
+  // The same idea on the way back, and the same field, but a listening level rather
+  // than a sending one: it stops at untouched, because the voices arriving here have
+  // already been lifted as far as they need to be.
+  { id: "listen", field: "voiceGain", suffix: "VoiceGain", clamp: clampListenLevel, reset: UNITY_GAIN, directions: ["incoming"], format: (value) => (value <= MIN_VOICE_GAIN ? t(locale, "filterOff") : `${Math.round(value * 100)}%`) },
   { id: "low-cut", field: "lowCutHz", suffix: "LowCutHz", clamp: clampLowCut, reset: LOW_CUT_OFF, format: (value) => (value <= LOW_CUT_OFF ? t(locale, "filterOff") : `${Math.round(value)} Hz`) },
   { id: "clarity", field: "clarityDb", suffix: "ClarityDb", clamp: clampClarity, reset: CLARITY_OFF, format: (value) => (value <= CLARITY_OFF ? t(locale, "filterOff") : `+${value.toFixed(1)} dB`) },
   { id: "high-cut", field: "highCutHz", suffix: "HighCutHz", clamp: clampHighCut, reset: HIGH_CUT_OFF, format: (value) => (value >= HIGH_CUT_OFF ? t(locale, "filterOff") : `${(value / 1000).toFixed(1)} kHz`) },
   { id: "pause", field: "pauseMs", suffix: "PauseMs", clamp: clampPauseMs, reset: PAUSE_AUTO_MS, format: (value) => (value <= PAUSE_AUTO_MS ? t(locale, "pauseAuto") : `${(value / 1000).toFixed(1)} s`) }
 ];
 
-const AUDIO_FIELDS = ["outgoing", "incoming"].flatMap((direction) => AUDIO_CONTROLS.map((control) => ({
-  ...control,
-  direction,
-  key: `${direction}${control.suffix}`,
-  slider: $(`#${direction}-${control.id}`),
-  output: $(`#${direction}-${control.id}-value`)
-})));
+const AUDIO_FIELDS = ["outgoing", "incoming"].flatMap((direction) => AUDIO_CONTROLS
+  .filter((control) => !control.directions || control.directions.includes(direction))
+  .map((control) => ({
+    ...control,
+    direction,
+    key: `${direction}${control.suffix}`,
+    slider: $(`#${direction}-${control.id}`),
+    output: $(`#${direction}-${control.id}-value`)
+  })));
 
 function renderAudio(settings) {
   // Status refreshes run on a timer; writing a slider back mid-drag would fight the

@@ -1,4 +1,4 @@
-import { clampClarity, clampGain, clampHighCut, clampLowCut, createAudioStage } from "./audio-gain.js";
+import { clampClarity, clampGain, clampHighCut, clampListenLevel, clampLowCut, clampVoiceGain, createAudioStage } from "./audio-gain.js";
 import { DEFAULT_SETTINGS } from "./config.js";
 import { t } from "./i18n.js";
 import { clampPauseMs, RealtimeTranslator } from "./realtime.js";
@@ -600,6 +600,9 @@ function releaseSpeechGates() {
 function directionTuning(settings, direction) {
   return {
     gain: clampGain(settings[`${direction}Gain`]),
+    // Only outgoing carries one: it is the level your own voice is heard at by the
+    // room, and the participant's audio has no equivalent to send anywhere.
+    voiceGain: clampVoiceGain(settings[`${direction}VoiceGain`]),
     lowCutHz: clampLowCut(settings[`${direction}LowCutHz`]),
     clarityDb: clampClarity(settings[`${direction}ClarityDb`]),
     highCutHz: clampHighCut(settings[`${direction}HighCutHz`]),
@@ -628,6 +631,7 @@ function applyTuning(direction, tuning = {}) {
   const next = { ...activeSettings };
   for (const [field, key, clamp] of [
     ["gain", "Gain", clampGain],
+    ["voiceGain", "VoiceGain", clampVoiceGain],
     ["lowCutHz", "LowCutHz", clampLowCut],
     ["clarityDb", "ClarityDb", clampClarity],
     ["highCutHz", "HighCutHz", clampHighCut],
@@ -639,9 +643,17 @@ function applyTuning(direction, tuning = {}) {
   activeSettings = next;
   const stage = direction === "outgoing" ? outgoingStage : incomingStage;
   stage?.setTuning(tuning);
+  // The participant reaches you as two voices — the interpreter's and, whenever the
+  // untranslated audio is playing, their own — and the level is asked of both. The
+  // stage covers the second one; the first only exists as an element.
+  if (direction === "incoming" && tuning.voiceGain !== undefined) applyListenLevel();
   if (tuning.pauseMs === undefined) return;
   const translator = direction === "outgoing" ? outgoingTranslator : incomingTranslator;
   translator?.setPauseMs(next[`${direction}PauseMs`]);
+}
+
+function applyListenLevel() {
+  incomingOutput.volume = clampListenLevel(activeSettings.incomingVoiceGain);
 }
 
 function autoPauseSeconds() {
@@ -742,6 +754,7 @@ async function start(suppliedSettings = {}) {
     incomingReturnOn = Boolean(settings.incomingReturnOn);
     applyMuteState();
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
+    applyListenLevel();
     generation += 1;
     // With auto-pause on, a call starts with both sides parked: nothing is streamed
     // — and nothing is billed — until someone actually speaks. Most of a meeting is

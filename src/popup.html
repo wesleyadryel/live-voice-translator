@@ -57,9 +57,14 @@
           <button type="button" class="mute-button" id="mute-outgoing" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5.4 6.6 9H3.8v6h2.8L11 18.6V5.4Z"/><path d="M15.4 9.4a3.7 3.7 0 0 1 0 5.2M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="mute-slash" d="M4 4l16 16"/></svg><span data-i18n="muteAll">Mute</span></button>
         </div>
         <div class="gain-row">
-          <label for="outgoing-gain" data-i18n="myMicLevel">My mic</label>
+          <label for="outgoing-gain" data-i18n="interpreterHears">Interpreter hears</label>
           <input type="range" id="outgoing-gain" min="0.1" max="8" step="0.1" value="1" data-i18n-title="gainOutgoingHint" data-i18n-aria="gainOutgoingHint">
           <output id="outgoing-gain-value" for="outgoing-gain">1.0×</output>
+        </div>
+        <div class="gain-row">
+          <label for="outgoing-voice" data-i18n="participantHears">Participant hears</label>
+          <input type="range" id="outgoing-voice" min="0" max="4" step="0.1" value="1" data-i18n-title="voiceGainOutgoingHint" data-i18n-aria="voiceGainOutgoingHint">
+          <output id="outgoing-voice-value" for="outgoing-voice">1.0×</output>
         </div>
         <details class="tuning">
           <summary data-i18n="fineTuning">Fine tuning</summary>
@@ -95,9 +100,14 @@
           <button type="button" class="mute-button" id="mute-incoming" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5.4 6.6 9H3.8v6h2.8L11 18.6V5.4Z"/><path d="M15.4 9.4a3.7 3.7 0 0 1 0 5.2M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="mute-slash" d="M4 4l16 16"/></svg><span data-i18n="muteAll">Mute</span></button>
         </div>
         <div class="gain-row">
-          <label for="incoming-gain" data-i18n="participantLevel">Participant</label>
+          <label for="incoming-gain" data-i18n="interpreterHears">Interpreter hears</label>
           <input type="range" id="incoming-gain" min="0.1" max="8" step="0.1" value="1" data-i18n-title="gainIncomingHint" data-i18n-aria="gainIncomingHint">
           <output id="incoming-gain-value" for="incoming-gain">1.0×</output>
+        </div>
+        <div class="gain-row">
+          <label for="incoming-listen" data-i18n="youHear">You hear</label>
+          <input type="range" id="incoming-listen" min="0" max="1" step="0.05" value="1" data-i18n-title="listenIncomingHint" data-i18n-aria="listenIncomingHint">
+          <output id="incoming-listen-value" for="incoming-listen">100%</output>
         </div>
         <details class="tuning">
           <summary data-i18n="fineTuning">Fine tuning</summary>

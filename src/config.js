@@ -17,11 +17,19 @@ export const DEFAULT_SETTINGS = {
   // (0 / 0 / 20000 all mean "do nothing"); pauseMs decides how long a silence may be
   // before the phrase is treated as finished (0 leaves the model's own detector on).
   outgoingGain: 1,
+  // How loud your voice leaves for the other side, applied after the level above and
+  // heard by nobody else: the interpreter keeps listening through the corrected
+  // signal whatever this is set to.
+  outgoingVoiceGain: 1,
   outgoingLowCutHz: 0,
   outgoingClarityDb: 0,
   outgoingHighCutHz: 20000,
   outgoingPauseMs: 0,
   incomingGain: 1,
+  // How loud the participant reaches you, translated voice and untranslated alike.
+  // It is downstream of both interpreters, so turning it down never costs a word of
+  // the transcript.
+  incomingVoiceGain: 1,
   incomingLowCutHz: 0,
   incomingClarityDb: 0,
   incomingHighCutHz: 20000,

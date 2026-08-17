@@ -266,6 +266,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             outgoingOriginalOn: Boolean(settings.outgoingOriginalOn),
             outgoingMonitorOn: Boolean(settings.outgoingMonitorOn),
             outgoingGain: settings.outgoingGain,
+            outgoingVoiceGain: settings.outgoingVoiceGain,
             outgoingLowCutHz: settings.outgoingLowCutHz,
             outgoingClarityDb: settings.outgoingClarityDb,
             outgoingHighCutHz: settings.outgoingHighCutHz,

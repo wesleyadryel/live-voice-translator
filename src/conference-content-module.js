@@ -1,4 +1,4 @@
-import { clampClarity, clampGain, clampHighCut, clampLowCut, createAudioStage } from "./audio-gain.js";
+import { clampClarity, clampGain, clampHighCut, clampLowCut, clampVoiceGain, createAudioStage } from "./audio-gain.js";
 import { clampPauseMs, RealtimeTranslator } from "./realtime.js";
 import { createSpeechGate } from "./speech-gate.js";
 
@@ -241,16 +241,20 @@ async function startOutgoing(settings) {
       // out of the speakers is picked back up and fed to the interpreter.
       audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false }
     });
-    // The boost is applied once, here: the interpreter, the speech gate and the
-    // untranslated voice the participant hears all read the same corrected level.
+    // The correction is applied once, here: the interpreter and the speech gate read
+    // the same level, and the voice sent to the participant branches off it with its
+    // own.
     audioStage = createAudioStage(microphoneStream, {
       gain: clampGain(settings.outgoingGain),
+      voiceGain: clampVoiceGain(settings.outgoingVoiceGain),
       lowCutHz: clampLowCut(settings.outgoingLowCutHz),
       clarityDb: clampClarity(settings.outgoingClarityDb),
       highCutHz: clampHighCut(settings.outgoingHighCutHz)
     });
     microphoneInput = audioStage.stream;
-    publishOriginalTrack(microphoneInput);
+    // The participant is sent the outgoing branch, so how loud your voice arrives on
+    // their side is theirs to be set separately from what the interpreter hears.
+    publishOriginalTrack(audioStage.voiceStream);
     applyOutgoingMode();
     const audio = ensureOutputElement();
     audio.muted = true;
@@ -314,7 +318,7 @@ export async function handleConferenceMessage(message) {
     const tuning = message.outgoing || {};
     audioStage?.setTuning(tuning);
     if (currentSettings) {
-      for (const [field, key] of [["gain", "outgoingGain"], ["lowCutHz", "outgoingLowCutHz"], ["clarityDb", "outgoingClarityDb"], ["highCutHz", "outgoingHighCutHz"], ["pauseMs", "outgoingPauseMs"]]) {
+      for (const [field, key] of [["gain", "outgoingGain"], ["voiceGain", "outgoingVoiceGain"], ["lowCutHz", "outgoingLowCutHz"], ["clarityDb", "outgoingClarityDb"], ["highCutHz", "outgoingHighCutHz"], ["pauseMs", "outgoingPauseMs"]]) {
         if (tuning[field] !== undefined) currentSettings[key] = tuning[field];
       }
     }
