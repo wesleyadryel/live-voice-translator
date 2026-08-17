@@ -21,6 +21,10 @@ let incomingStage = null;
 let state = freshState();
 let meeting = null;
 let liveTranscript = [];
+// speakerRole → id of the line currently being spoken, so its deltas grow one line
+// instead of stacking half-sentences.
+const pendingSourceLines = new Map();
+let transcriptNotifyTimer = null;
 let activeSettings = { ...DEFAULT_SETTINGS };
 let sessionStartedAt = 0;
 let sessionTimer = null;
@@ -193,7 +197,7 @@ function statusState() {
 }
 
 function freshState(overrides = {}) {
-  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, translatedUtteranceCount: 0, reconnectAttempt: 0, ...overrides };
+  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, sourceTranscriptCount: 0, translatedUtteranceCount: 0, reconnectAttempt: 0, ...overrides };
 }
 
 async function storageGet(defaults = {}) {
@@ -234,13 +238,20 @@ async function stopSpeakerRecording() {
   });
 }
 
-function addTranscript(speaker, text, language, speakerRole = "") {
-  if (!text) return;
+// kind separates the two texts an utterance can produce: "translation" is what the
+// interpreter said, "source" is what the speaker said. Both are kept, because the
+// second one is the only text that survives an interpreter that never spoke.
+function addTranscript(speaker, text, language, speakerRole = "", kind = "translation", pending = false) {
+  if (!text) return null;
   const startedAt = meeting?.startedAt || sessionStartedAt || Date.now();
   const item = {
     id: crypto.randomUUID(),
     speaker,
     speakerRole,
+    kind,
+    // A line still being spoken. It is in the feed so it can be read along with, and
+    // marked so nothing treats a half-sentence as a finished one.
+    pending,
     text,
     language,
     offsetSeconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000))
@@ -248,7 +259,57 @@ function addTranscript(speaker, text, language, speakerRole = "") {
   liveTranscript.push(item);
   if (liveTranscript.length > MAX_LIVE_TRANSCRIPT_ITEMS) liveTranscript = liveTranscript.slice(-MAX_LIVE_TRANSCRIPT_ITEMS);
   if (meeting) meeting.transcript.push(item);
-  state.transcriptCount += 1;
+  // Counted apart so the two columns each state their own total: a translation count
+  // that stops rising while the spoken one keeps going is the failure being reported.
+  // An unfinished line counts for nothing until it is finished.
+  if (!pending) {
+    if (kind === "source") state.sourceTranscriptCount += 1;
+    else state.transcriptCount += 1;
+  }
+  notifyTranscript();
+  return item;
+}
+
+// The same object sits in both the live window and the meeting, so writing the text
+// once updates the record and the panel together. Once the window has scrolled past
+// a pending line there is nothing left to grow, and the next words start a new one.
+function writeSourceLine(speaker, text, language, speakerRole, final) {
+  const pendingId = pendingSourceLines.get(speakerRole);
+  const line = pendingId ? liveTranscript.find((item) => item.id === pendingId) : null;
+  if (!line) {
+    const created = addTranscript(speaker, text, language, speakerRole, "source", !final);
+    if (created && !final) pendingSourceLines.set(speakerRole, created.id);
+    return;
+  }
+  line.text = text;
+  if (final) {
+    line.pending = false;
+    state.sourceTranscriptCount += 1;
+    pendingSourceLines.delete(speakerRole);
+  }
+  notifyTranscript();
+}
+
+// A session that ends mid-sentence leaves a line that will never be completed. It is
+// closed as it stands rather than left marked unfinished forever, and its words count.
+function settlePendingSourceLines() {
+  for (const id of pendingSourceLines.values()) {
+    const line = liveTranscript.find((item) => item.id === id);
+    if (!line) continue;
+    line.pending = false;
+    state.sourceTranscriptCount += 1;
+  }
+  pendingSourceLines.clear();
+}
+
+// The panel is polled once a second, which is slower than speech reads. A change is
+// announced as it happens instead, throttled so a stream of deltas is one message.
+function notifyTranscript() {
+  if (transcriptNotifyTimer) return;
+  transcriptNotifyTimer = setTimeout(() => {
+    transcriptNotifyTimer = null;
+    chrome.runtime.sendMessage({ type: "TRANSCRIPT_UPDATED" }).catch(() => {});
+  }, 150);
 }
 
 function responseText(payload) {
@@ -257,7 +318,13 @@ function responseText(payload) {
 }
 
 async function createSummary(settings, currentMeeting) {
-  const lines = currentMeeting.transcript.map((item) => `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`).join("\n");
+  // Where the interpreter worked, the original lines repeat the same conversation in a
+  // second language and only cost tokens, so the summary reads the translated pass
+  // alone. Where it produced nothing, they are all the meeting left behind and the
+  // summary is written from them.
+  const translated = currentMeeting.transcript.filter((item) => item.kind !== "source");
+  const summarised = translated.length ? translated : currentMeeting.transcript;
+  const lines = summarised.map((item) => `[${Math.floor(item.offsetSeconds / 60)}:${String(item.offsetSeconds % 60).padStart(2, "0")}] ${item.speaker}: ${item.text}`).join("\n");
   if (!lines) return tr(settings, "summaryNoSpeech");
   const configuredSections = { ...DEFAULT_SETTINGS.summarySections, ...(settings.summarySections || {}) };
   const sectionTitles = SUMMARY_SECTION_TITLES[settings.sourceLanguage] || SUMMARY_SECTION_TITLES.English;
@@ -423,6 +490,7 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   const reusableTabStream = reason !== "tab_closed" && tabStream?.active ? tabStream : null;
   generation += 1;
   reconnecting = false;
+  settlePendingSourceLines();
   stopMonitorFeed();
   stopReturnFeed();
   releaseSpeechGates();
@@ -522,6 +590,9 @@ function translatorOptions(settings, mode, outgoing) {
     to: forwards ? settings.targetLanguage : settings.sourceLanguage,
     voice: outgoing ? settings.outgoingVoice : settings.incomingVoice,
     verbatim: !mode.audio,
+    // Only the speaking modes need it: a verbatim session already returns the spoken
+    // words as its output, so there is nothing left to recover there.
+    sourceTranscript: mode.audio,
     manualChunkMs: mediaCapture ? 6000 : 0,
     // Read from the live settings rather than the ones the session started with, so
     // a window widened during the call survives a reconnect.
@@ -529,6 +600,16 @@ function translatorOptions(settings, mode, outgoing) {
     onTranscript: (text) => {
       if (mode.audio && text) state.translatedUtteranceCount += 1;
       addTranscript(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, mode.audio ? (forwards ? settings.targetLanguage : settings.sourceLanguage) : (forwards ? settings.sourceLanguage : settings.targetLanguage), outgoing ? "you" : "participant");
+    },
+    // The words as spoken, in the language of this side, whatever became of the
+    // translation: it lands in the transcript even when no dubbing was ever heard.
+    // The partial keeps the line growing while it is being said; the final one closes
+    // it and is what the record keeps.
+    onSourcePartial: (text) => {
+      writeSourceLine(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, forwards ? settings.sourceLanguage : settings.targetLanguage, outgoing ? "you" : "participant", false);
+    },
+    onSourceTranscript: (text) => {
+      writeSourceLine(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, forwards ? settings.sourceLanguage : settings.targetLanguage, outgoing ? "you" : "participant", true);
     },
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
     // The participant's translated voice only exists once its track arrives, and a
@@ -660,6 +741,19 @@ function autoPauseSeconds() {
   return Math.max(0, Number(activeSettings.autoPauseSeconds) || 0);
 }
 
+// Parking is always on a timer rather than immediate, whether the silence follows a
+// sentence or the start of the call.
+function armIdlePark(key) {
+  const idleSeconds = autoPauseSeconds();
+  if (!idleSeconds) return;
+  clearTimeout(idleTimers.get(key));
+  idleTimers.set(key, setTimeout(() => {
+    if (!state.active || reconnecting) return;
+    idleParked.add(key);
+    applyInterpreterState().catch(() => {});
+  }, idleSeconds * 1000));
+}
+
 function setupSpeechGate(key, stream) {
   const idleSeconds = autoPauseSeconds();
   if (!idleSeconds || !stream) return;
@@ -670,14 +764,7 @@ function setupSpeechGate(key, stream) {
       if (!idleParked.delete(key)) return;
       applyInterpreterState().catch(() => {});
     },
-    onSpeechEnd: () => {
-      clearTimeout(idleTimers.get(key));
-      idleTimers.set(key, setTimeout(() => {
-        if (!state.active || reconnecting) return;
-        idleParked.add(key);
-        applyInterpreterState().catch(() => {});
-      }, idleSeconds * 1000));
-    }
+    onSpeechEnd: () => armIdlePark(key)
   });
   speechGates.set(key, gate);
 }
@@ -724,6 +811,7 @@ async function start(suppliedSettings = {}) {
   const mode = MODES[settings.mode] || MODES.both;
   sessionStartedAt = Date.now();
   liveTranscript = [];
+  pendingSourceLines.clear();
   meeting = mode.notes ? { id: crypto.randomUUID(), title: tr(settings, "meetingTitle", { date: new Date().toLocaleString(settings.interfaceLanguage || "en") }), startedAt: sessionStartedAt, mode: settings.mode, languages: [settings.sourceLanguage, settings.targetLanguage], transcript: [] } : null;
   state = freshState({ active: true, phase: "connecting", startedAt: sessionStartedAt });
   try {
@@ -756,12 +844,14 @@ async function start(suppliedSettings = {}) {
     outgoingMonitor.volume = settings.monitorLevel === "quiet" ? 0.2 : 1;
     applyListenLevel();
     generation += 1;
-    // With auto-pause on, a call starts with both sides parked: nothing is streamed
-    // — and nothing is billed — until someone actually speaks. Most of a meeting is
-    // spent listening, so this is where the bulk of the saving comes from.
+    // Auto-pause is what keeps a call from paying for silence, but a session that
+    // starts parked spends its connection time on the first sentence — the one the
+    // user pressed Start in order to say. So both sides open live and park themselves
+    // after the same silence window, costing one window of streamed silence per start
+    // and no wait at all for whoever speaks straight away.
     if (autoPauseSeconds()) {
-      if (outgoingInterpreterEligible(settings)) idleParked.add("outgoing");
-      idleParked.add("incoming");
+      if (outgoingInterpreterEligible(settings)) armIdlePark("outgoing");
+      armIdlePark("incoming");
     }
     await connectPair(settings, mode);
     // The gate runs on every eligible side, parked or not: it is what notices the
@@ -781,7 +871,9 @@ async function start(suppliedSettings = {}) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
   if (message.type === "GET_STATUS") {
-    sendResponse({ ok: true, state: statusState(), liveTranscript: liveTranscript.slice(-16), preparedTabId: preparedCapture?.tabId || null });
+    // The panel splits these into a translation column and a spoken-words column, so a
+    // window that once filled one feed now has to fill two.
+    sendResponse({ ok: true, state: statusState(), liveTranscript: liveTranscript.slice(-32), preparedTabId: preparedCapture?.tabId || null });
     return false;
   }
   if (message.type === "ADD_USAGE") {
@@ -829,8 +921,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "ADD_OUTGOING_TRANSCRIPT") {
     if (state.active && message.text) {
-      state.translatedUtteranceCount += 1;
-      addTranscript(tr(activeSettings, "speakerYou"), message.text, message.language || activeSettings.targetLanguage, "you");
+      // The original words of a conference tab arrive on the same channel as its
+      // translation, marked so they land in the spoken column and are not counted as
+      // an utterance the interpreter voiced.
+      const kind = message.kind === "source" ? "source" : "translation";
+      if (kind === "translation") state.translatedUtteranceCount += 1;
+      addTranscript(tr(activeSettings, "speakerYou"), message.text, message.language || activeSettings.targetLanguage, "you", kind);
     }
     sendResponse({ ok: true });
     return false;

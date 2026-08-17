@@ -1,6 +1,7 @@
 import { clampClarity, clampGain, clampHighCut, clampListenLevel, clampLowCut, clampVoiceGain, CLARITY_OFF, HIGH_CUT_OFF, LOW_CUT_OFF, MIN_VOICE_GAIN, UNITY_GAIN } from "./audio-gain.js";
 import { loadSettings, maskKey, saveSettings } from "./config.js";
 import { languageName, localizePage, t } from "./i18n.js";
+import { createLocalTranslator, localTranslationAvailability, localTranslationSupported, translateLocally } from "./local-translator.js";
 import { clampPauseMs, PAUSE_AUTO_MS } from "./realtime.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -11,6 +12,7 @@ const elements = {
   setup: $("#setup-banner"), setupCopy: $("#setup-copy"), notice: $("#recording-notice"),
   modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages"),
   transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
+  sourceFeed: $("#source-feed"), sourceEmpty: $("#source-empty"), sourceCount: $("#source-count"),
   sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"), muteButtonsOutgoing: $("#mute-buttons-outgoing"),
   muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), addOutgoingMonitor: $("#add-outgoing-monitor"), muteOutgoing: $("#mute-outgoing"),
   muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), addIncomingReturn: $("#add-incoming-return"), muteIncoming: $("#mute-incoming")
@@ -37,6 +39,15 @@ let activeTabUrl = "";
 let outgoingRouteStatus = null;
 let liveTranscript = [];
 let transcriptSignature = "";
+// Line id → the same sentence in the other language, translated on this machine. The
+// feed is rebuilt from scratch on every change, so the text has to be kept outside it.
+const lineTranslations = new Map();
+const lineTranslationsInFlight = new Set();
+let localTranslationReady = false;
+let pretranslating = false;
+// Lines currently reading as their translation. Survives the feed being rebuilt, which
+// happens on every new word spoken.
+const shownTranslations = new Set();
 let gainAdjusting = false;
 const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMonitorOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingReturnOn", "incomingMuted"];
 let mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, false]));
@@ -307,47 +318,200 @@ function render(state = currentState) {
   updateTimer();
 }
 
-function renderTranscript() {
-  const savedWithMeeting = ["notes", "both", "transcript"].includes(currentMode);
-  elements.transcriptPolicy.textContent = t(locale, savedWithMeeting ? "transcriptSaved" : "transcriptTemporary");
-  elements.transcriptPolicy.dataset.saved = String(savedWithMeeting);
-  elements.transcriptCount.textContent = String(currentState.transcriptCount || liveTranscript.length || 0);
+// The glyph is the one every translation control uses — a letter beside a character in
+// another script — so it needs no label to be read as "show this in the other language".
+const TRANSLATE_ICON = "M12.87 15.07 10.33 12.56l.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04ZM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12Zm-2.62 7 1.62-4.33L19.12 17h-3.24Z";
 
-  const signature = `${locale}:${liveTranscript.map((item) => `${item.id}:${item.text}`).join("|")}`;
-  if (signature === transcriptSignature) {
-    updateTranscriptEmptyState();
+function translateButton(item, showing) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "translate-toggle";
+  button.dataset.translate = item.id;
+  button.setAttribute("aria-pressed", String(showing));
+  button.title = t(locale, showing ? "showOriginal" : "showTranslation");
+  button.setAttribute("aria-label", button.title);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", TRANSLATE_ICON);
+  svg.append(path);
+  button.append(svg);
+  return button;
+}
+
+// One column per kind of text an utterance produces: the interpreter's translation on
+// the left, the words as they were spoken on the right. Reading them side by side is
+// also what makes a failed dubbing obvious — the right column keeps filling while the
+// left one stops.
+function fillFeed(feed, empty, items) {
+  const wasNearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48;
+  feed.replaceChildren();
+  if (!items.length) {
+    feed.append(empty);
     return;
   }
-  const wasNearBottom = elements.transcriptFeed.scrollHeight - elements.transcriptFeed.scrollTop - elements.transcriptFeed.clientHeight < 48;
-  transcriptSignature = signature;
-  elements.transcriptFeed.replaceChildren();
-  if (!liveTranscript.length) {
-    elements.transcriptFeed.append(elements.transcriptEmpty);
-    updateTranscriptEmptyState();
-    return;
-  }
-  for (const item of liveTranscript) {
+  for (const item of items) {
     const line = document.createElement("article");
-    line.className = `transcript-line ${item.speakerRole === "you" ? "is-you" : "is-participant"}`;
+    // Original speech is shown quieter than the translation: it is the same utterance
+    // in the language it was said, kept so nothing is lost when no dubbing follows.
+    line.className = `transcript-line ${item.speakerRole === "you" ? "is-you" : "is-participant"}${item.kind === "source" ? " is-source" : ""}${item.pending ? " is-pending" : ""}`;
+    line.dataset.id = item.id;
     const meta = document.createElement("header");
     const speaker = document.createElement("strong");
     const time = document.createElement("time");
     const copy = document.createElement("p");
     speaker.textContent = item.speaker || t(locale, item.speakerRole === "you" ? "speakerYou" : "speakerParticipant");
     time.textContent = formatDuration(item.offsetSeconds || 0);
-    copy.textContent = item.text;
+    // The line reads either as it was said or as it means, never both at once: the
+    // button swaps the text in place rather than adding a second copy of it.
+    const showing = shownTranslations.has(item.id);
+    const translation = lineTranslations.get(item.id);
+    copy.textContent = showing ? translation || t(locale, "translating") : item.text;
+    if (showing) line.classList.add("is-translated");
     meta.append(speaker, time);
+    // A line still being spoken has no settled text to translate yet.
+    if (!item.pending) meta.append(translateButton(item, showing));
     line.append(meta, copy);
-    elements.transcriptFeed.append(line);
+    feed.append(line);
   }
-  if (wasNearBottom) elements.transcriptFeed.scrollTop = elements.transcriptFeed.scrollHeight;
+  if (wasNearBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+function renderTranscript() {
+  const savedWithMeeting = ["notes", "both", "transcript"].includes(currentMode);
+  elements.transcriptPolicy.textContent = t(locale, savedWithMeeting ? "transcriptSaved" : "transcriptTemporary");
+  elements.transcriptPolicy.dataset.saved = String(savedWithMeeting);
+  // The spoken column exists to catch a dubbing that failed. The note-only modes never
+  // dub anything — their single feed already is the spoken words — so there the panel
+  // stays one column rather than showing an empty half.
+  const dubbing = ["translation", "both"].includes(currentMode);
+  elements.transcript.dataset.columns = dubbing ? "2" : "1";
+  const translated = liveTranscript.filter((item) => item.kind !== "source");
+  const spoken = liveTranscript.filter((item) => item.kind === "source");
+  elements.transcriptCount.textContent = String(currentState.transcriptCount || translated.length || 0);
+  elements.sourceCount.textContent = String(currentState.sourceTranscriptCount || spoken.length || 0);
+
+  const signature = `${locale}:${liveTranscript.map((item) => `${item.id}:${item.text}`).join("|")}`;
+  if (signature === transcriptSignature) {
+    updateTranscriptEmptyState();
+    return;
+  }
+  transcriptSignature = signature;
+  fillFeed(elements.transcriptFeed, elements.transcriptEmpty, translated);
+  fillFeed(elements.sourceFeed, elements.sourceEmpty, spoken);
+  updateTranscriptEmptyState();
+  pretranslateLines().catch(() => {});
+}
+
+// A line spoken in one language is read in the one the other person uses — the same
+// pair the session was set up with, in whichever direction this line runs.
+function otherLanguage(item) {
+  const source = currentSettings.sourceLanguage;
+  const target = currentSettings.targetLanguage;
+  if (!source || !target) return "";
+  return item.language === source ? target : source;
+}
+
+async function translateLine(id) {
+  if (!localTranslationReady || lineTranslations.has(id) || lineTranslationsInFlight.has(id)) return "";
+  // A line still being spoken would be translated half-said, and then again on the
+  // next word. It waits until the utterance is closed.
+  const item = liveTranscript.find((entry) => entry.id === id);
+  if (!item || item.pending || !item.text) return "";
+  const to = otherLanguage(item);
+  if (!to || to === item.language) return "";
+  lineTranslationsInFlight.add(id);
+  const text = await translateLocally(item.text, item.language, to).catch(() => "");
+  lineTranslationsInFlight.delete(id);
+  if (text) lineTranslations.set(id, text);
+  return text;
+}
+
+// Translating lines as they finish, rather than when the button is pressed, is what
+// makes the swap instant. It runs on the local model, so it costs nothing but a little
+// CPU, and only the visible window is ever considered.
+async function pretranslateLines() {
+  if (!localTranslationReady || pretranslating) return;
+  const queue = liveTranscript.filter((item) => !item.pending && item.text && !lineTranslations.has(item.id)).slice(-12);
+  if (!queue.length) return;
+  pretranslating = true;
+  for (const item of queue) await translateLine(item.id).catch(() => {});
+  pretranslating = false;
+}
+
+// Toggling changes nothing about the transcript itself, so the signature that guards
+// against needless repaints would swallow it.
+function repaintTranscript() {
+  transcriptSignature = "";
+  renderTranscript();
+}
+
+// The first press is also the user gesture Chrome requires before it will fetch a
+// language pack, which is why the download hangs off this and not off a page load.
+async function ensureLocalTranslation() {
+  if (localTranslationReady || !localTranslationSupported()) return localTranslationReady;
+  const settings = currentSettings;
+  const ready = await Promise.all([
+    createLocalTranslator(settings.sourceLanguage, settings.targetLanguage),
+    createLocalTranslator(settings.targetLanguage, settings.sourceLanguage)
+  ]).catch(() => []);
+  localTranslationReady = ready.some(Boolean);
+  return localTranslationReady;
+}
+
+async function toggleLineTranslation(id) {
+  if (shownTranslations.delete(id)) {
+    repaintTranscript();
+    return;
+  }
+  shownTranslations.add(id);
+  repaintTranscript();
+  if (lineTranslations.has(id)) return;
+  await ensureLocalTranslation();
+  const text = await translateLine(id).catch(() => "");
+  // Nothing came back — no language pack, no support, no pair. The line goes back to
+  // what it was rather than sitting on a placeholder that will never resolve.
+  if (!text) shownTranslations.delete(id);
+  repaintTranscript();
+}
+
+// Availability is only re-read when the pair changes: the answer cannot change between
+// two ticks of a one-second refresh, and the translations of the old pair are stale.
+let translationPair = "";
+
+async function renderLocalTranslation(settings) {
+  const pair = `${settings.sourceLanguage}>${settings.targetLanguage}`;
+  if (pair === translationPair) return;
+  translationPair = pair;
+  lineTranslations.clear();
+  shownTranslations.clear();
+  if (!localTranslationSupported()) {
+    localTranslationReady = false;
+    console.info("[LiveVoice] local translation unsupported in this Chrome");
+    return;
+  }
+  const states = await Promise.all([
+    localTranslationAvailability(settings.sourceLanguage, settings.targetLanguage),
+    localTranslationAvailability(settings.targetLanguage, settings.sourceLanguage)
+  ]);
+  // Ready means the pack is on disk and lines can be translated before anyone asks.
+  // A pack still to be downloaded waits for the first press of a line's button, which
+  // is the gesture Chrome needs to fetch it.
+  localTranslationReady = states.some((state) => state === "available");
+  console.info("[LiveVoice] local translation", pair, states.join("/"));
+}
+
+function updateEmptyState(empty, waitingTitle, waitingCopy) {
+  if (!empty.isConnected) return;
+  empty.classList.toggle("is-listening", active);
+  empty.querySelector("strong").textContent = t(locale, active ? "transcriptListening" : waitingTitle);
+  empty.querySelector("p").textContent = t(locale, active ? "transcriptListeningCopy" : waitingCopy);
 }
 
 function updateTranscriptEmptyState() {
-  if (!elements.transcriptEmpty.isConnected) return;
-  elements.transcriptEmpty.classList.toggle("is-listening", active);
-  elements.transcriptEmpty.querySelector("strong").textContent = t(locale, active ? "transcriptListening" : "transcriptWaitingTitle");
-  elements.transcriptEmpty.querySelector("p").textContent = t(locale, active ? "transcriptListeningCopy" : "transcriptWaitingCopy");
+  updateEmptyState(elements.transcriptEmpty, "transcriptWaitingTitle", "transcriptWaitingCopy");
+  updateEmptyState(elements.sourceEmpty, "spokenWaitingTitle", "spokenWaitingCopy");
 }
 
 function updateTimer() {
@@ -383,6 +547,7 @@ async function refresh() {
   elements.setup.hidden = Boolean(settings.apiKey);
   elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
   renderAudio(settings);
+  await renderLocalTranslation(settings).catch(() => {});
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   liveTranscript = Array.isArray(result?.liveTranscript) ? result.liveTranscript : [];
   preparedTabId = result?.preparedTabId || null;
@@ -551,6 +716,29 @@ for (const select of [elements.outgoingDevice, elements.incomingDevice]) select.
   const outgoingDeviceId = elements.outgoingDevice.value;
   await saveSettings({ outgoingDeviceId, incomingDeviceId: elements.incomingDevice.value, audioProfile: outgoingDeviceId === "default" ? "solo" : "conference" });
   await refresh();
+});
+
+// The once-a-second refresh reads settings, tabs and devices as well, which is far
+// more than a new line of speech needs. Text arriving between those ticks takes this
+// narrower path: the transcript alone, drawn as it is spoken.
+async function syncTranscript() {
+  const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+  if (!result) return;
+  liveTranscript = Array.isArray(result.liveTranscript) ? result.liveTranscript : [];
+  if (result.state) currentState = { ...currentState, ...result.state };
+  renderTranscript();
+}
+
+elements.transcript.addEventListener("click", (event) => {
+  const button = event.target.closest?.(".translate-toggle");
+  if (button) toggleLineTranslation(button.dataset.translate).catch(() => {});
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "TRANSCRIPT_UPDATED" && document.visibilityState === "visible" && !busy) {
+    syncTranscript().catch(() => {});
+  }
+  return false;
 });
 
 refresh().then(() => listOutputs(currentSettings)).catch((error) => render({ active: false, phase: "error", error: friendlyError(error) }));

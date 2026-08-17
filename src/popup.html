@@ -135,15 +135,29 @@
       </div>
     </div>
     <section class="live-transcript" id="live-transcript" aria-label="Live transcript" data-i18n-aria="liveTranscript">
-      <header class="transcript-toolbar">
-        <div><strong data-i18n="liveTranscript">Live transcript</strong><span id="transcript-count">0</span></div>
-        <span class="transcript-policy" id="transcript-policy" data-i18n="transcriptTemporary">Temporary</span>
-      </header>
-      <div class="transcript-feed" id="transcript-feed" aria-live="polite" aria-relevant="additions text">
-        <div class="transcript-empty" id="transcript-empty">
-          <span class="transcript-empty-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-          <strong data-i18n="transcriptWaitingTitle">Your conversation will appear here</strong>
-          <p data-i18n="transcriptWaitingCopy">Start a meeting to see speech as text in real time.</p>
+      <div class="transcript-column">
+        <header class="transcript-toolbar">
+          <div><strong data-i18n="liveTranscript">Live transcript</strong><span id="transcript-count">0</span></div>
+          <span class="transcript-policy" id="transcript-policy" data-i18n="transcriptTemporary">Temporary</span>
+        </header>
+        <div class="transcript-feed" id="transcript-feed" aria-live="polite" aria-relevant="additions text">
+          <div class="transcript-empty" id="transcript-empty">
+            <span class="transcript-empty-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <strong data-i18n="transcriptWaitingTitle">Your conversation will appear here</strong>
+            <p data-i18n="transcriptWaitingCopy">Start a meeting to see speech as text in real time.</p>
+          </div>
+        </div>
+      </div>
+      <div class="transcript-column is-source-column" id="source-column">
+        <header class="transcript-toolbar">
+          <div><strong data-i18n="spokenTranscript">Spoken words</strong><span id="source-count">0</span></div>
+        </header>
+        <div class="transcript-feed" id="source-feed" aria-live="polite" aria-relevant="additions text">
+          <div class="transcript-empty" id="source-empty">
+            <span class="transcript-empty-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <strong data-i18n="spokenWaitingTitle">The words as spoken appear here</strong>
+            <p data-i18n="spokenWaitingCopy">This column is written from the speech itself, so it survives a translation that never arrives.</p>
+          </div>
         </div>
       </div>
     </section>

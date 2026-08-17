@@ -45,7 +45,10 @@ body.panel-shell {
 .control-panel {
   display: flex;
   flex-direction: column;
-  width: min(calc(100% - 16px), 560px);
+  /* Wide enough for the transcript to run as two columns — the translation beside the
+     words that were actually spoken. The side panel is sized by dragging its edge, so
+     this is a ceiling the panel grows into, not a width it forces. */
+  width: min(calc(100% - 16px), 920px);
   height: calc(100dvh - 16px);
   min-height: 0;
   margin: 8px auto;
@@ -437,11 +440,14 @@ body.panel-shell {
   appearance: none;
 }
 .gain-row input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Two feeds, never one: the interpreter's text and the speech it was made from. In a
+   narrow panel they stack, one above the other; from 700px they sit side by side and
+   the same utterance can be read across. */
 .live-transcript {
-  display: flex;
-  flex: 1 1 150px;
-  flex-direction: column;
-  min-height: 92px;
+  display: grid;
+  grid-template-rows: minmax(64px, 1fr) minmax(64px, 1fr);
+  flex: 1 1 220px;
+  min-height: 160px;
   margin-top: 10px;
   overflow: hidden;
   border: 1px solid rgba(130,151,184,.2);
@@ -450,6 +456,24 @@ body.panel-shell {
   box-shadow: inset 0 1px rgba(255,255,255,.72);
   -webkit-backdrop-filter: blur(18px) saturate(130%);
   backdrop-filter: blur(18px) saturate(130%);
+}
+.transcript-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.transcript-column + .transcript-column { border-top: 1px solid rgba(130,151,184,.2); }
+.transcript-column.is-source-column { background: rgba(240,245,253,.42); }
+/* Modes that never dub anything have nothing to recover, so the panel drops back to
+   the single feed it always was. */
+.live-transcript[data-columns="1"] { grid-template-rows: 1fr; }
+.live-transcript[data-columns="1"] .is-source-column { display: none; }
+@media (min-width: 700px) {
+  .live-transcript { grid-template-rows: none; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .live-transcript[data-columns="1"] { grid-template-columns: 1fr; }
+  .transcript-column + .transcript-column { border-top: 0; border-left: 1px solid rgba(130,151,184,.2); }
 }
 .transcript-toolbar {
   display: flex;
@@ -461,7 +485,7 @@ body.panel-shell {
 }
 .transcript-toolbar > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .transcript-toolbar strong { font-size: 10px; font-weight: 760; letter-spacing: .035em; }
-.transcript-toolbar #transcript-count {
+.transcript-toolbar #transcript-count, .transcript-toolbar #source-count {
   min-width: 18px;
   padding: 1px 5px;
   border-radius: 999px;
@@ -471,6 +495,35 @@ body.panel-shell {
   font-weight: 760;
   text-align: center;
 }
+/* The spoken column is the quieter of the two: same shape, none of the accent. */
+.is-source-column .transcript-toolbar strong { color: var(--secondary); }
+.is-source-column .transcript-toolbar #source-count { background: rgba(120,130,150,.14); color: var(--secondary); }
+/* Sits with the timestamp and stays faint until the line is hovered or the line is
+   already reading as its translation: one of these per line must not turn the feed
+   into a column of buttons. */
+.translate-toggle {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--tertiary);
+  opacity: .45;
+  cursor: pointer;
+  transition: opacity .15s var(--ease), color .15s var(--ease);
+}
+.translate-toggle svg { width: 11px; fill: currentColor; stroke: none; }
+.transcript-line:hover .translate-toggle { opacity: 1; }
+.translate-toggle:hover { color: var(--accent); background: rgba(38,116,237,.1); }
+.translate-toggle:focus-visible { opacity: 1; }
+.translate-toggle[aria-pressed="true"] { opacity: 1; color: var(--accent); }
+/* Reading as the other language: the line keeps its speaker and time, and says so by
+   the accent rule rather than by a second copy of the sentence. */
+.transcript-line.is-translated::before { background: rgba(38,116,237,.85); }
+.transcript-line.is-translated p { color: var(--text); font-style: normal; }
 .transcript-policy {
   display: inline-flex;
   align-items: center;
@@ -522,6 +575,15 @@ body.panel-shell {
 .transcript-line.is-participant strong { color: #6750b8; }
 .transcript-line time { color: var(--tertiary); font-size: 8px; font-variant-numeric: tabular-nums; }
 .transcript-line p { margin: 2px 0 0; color: var(--text); font-size: 10px; line-height: 1.38; overflow-wrap: anywhere; }
+/* The words as spoken, next to the translation of the same utterance: dashed rule and
+   secondary text so the feed still reads as one line of conversation per turn. */
+.transcript-line.is-source::before { background: repeating-linear-gradient(180deg, rgba(120,130,150,.5) 0 3px, transparent 3px 6px); }
+.transcript-line.is-source p { color: var(--secondary); font-style: italic; }
+/* Still being said: the line is already readable, and the caret says it will still
+   grow. The reduced-motion rule above stops the blink for anyone who asked it to. */
+.transcript-line.is-pending p { opacity: .75; }
+.transcript-line.is-pending p::after { content: "▍"; margin-left: 1px; animation: caret 1.1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
 .panel-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; color: var(--tertiary); font-size: 9px; font-variant-numeric: tabular-nums; }
 .panel-footer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { t } from "../src/i18n.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, usageJs, usage, usageCss, options, history, releaseCss, optionsCss, historyCss, manifestText] = await Promise.all([
+const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, usageJs, usage, usageCss, options, history, releaseCss, optionsCss, historyCss, manifestText, localTranslatorJs] = await Promise.all([
   read("../src/popup.html"),
   read("../src/popup.js"),
   read("../src/offscreen.js"),
@@ -19,7 +19,8 @@ const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, h
   read("../src/release.css"),
   read("../src/options-enhancements.css"),
   read("../src/history.css"),
-  read("../manifest.json")
+  read("../manifest.json"),
+  read("../src/local-translator.js")
 ]);
 
 const allHtml = `${popup}\n${options}\n${history}\n${usage}`;
@@ -89,9 +90,16 @@ assert.equal(/(outgoing|incoming)Muted\)\s*(return|stop\()/.test(offscreenJs), f
 assert.match(popupJs, /saveSettings\(\{ \[key\]: mutes\[key\] \}\)/, "a mute chosen before starting must persist into the session");
 assert.match(popupJs, /button\.disabled = busy \|\| Boolean\(overrides\[key\]\)/, "a narrower control must be inert once a broader one already covers it");
 assert.match(popupJs, /renderTranscript\(\)/, "status refreshes must render new transcript lines");
-assert.match(offscreenJs, /liveTranscript\.slice\(-16\)/, "status must return a bounded transcript window");
+assert.match(offscreenJs, /liveTranscript\.slice\(-32\)/, "status must return a bounded transcript window");
 assert.match(offscreenJs, /if \(meeting\) meeting\.transcript\.push\(item\)/, "only note-enabled meetings may persist live transcript items");
 assert.match(releaseCss, /height: calc\(100dvh - 16px\)/, "the side panel must have a fixed viewport-sized workspace");
+// The spoken words are only useful if they can be read against the translation, which
+// takes a second column and the width to put it in.
+assert.match(releaseCss, /width: min\(calc\(100% - 16px\), 920px\)/, "the panel must be able to grow wide enough for two columns");
+assert.match(releaseCss, /grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/, "a wide panel must place the two transcripts side by side");
+assert.match(popup, /id="source-feed"/, "the spoken words must have their own feed");
+assert.match(popupJs, /liveTranscript\.filter\(\(item\) => item\.kind === "source"\)/, "the panel must split the two kinds of transcript line");
+assert.match(offscreenJs, /state\.sourceTranscriptCount \+= 1/, "each column must count its own lines");
 assert.match(releaseCss, /prefers-reduced-motion/, "motion must respect the operating-system accessibility setting");
 
 assert.equal(options.includes('id="save-transcript"'), false, "privacy switches removed from the product brief must not remain in settings");
@@ -115,7 +123,12 @@ assert.match(options, /<select id="realtime-model">/, "the translation model mus
 assert.match(options, />gpt-realtime-1\.5</, "the select must show the official model id");
 assert.match(realtimeJs, /translations\/calls/, "translate models must use the dedicated translations endpoint");
 assert.match(realtimeJs, /output:\s*\{\s*language:/, "translate sessions must set the target language code");
-assert.match(realtimeJs, /this\.onUsage\(\{[\s\S]{0,200}?model: this\.sessionModel\(\)/, "usage must say which model produced it");
+// The session's own turns are billed on the realtime model, and input transcription
+// on the transcription model, so the reported model is a parameter that defaults to
+// the session's rather than a constant.
+assert.match(realtimeJs, /reportUsage\(usage, model = this\.sessionModel\(\)\)/, "usage must default to the session's own model");
+assert.match(realtimeJs, /this\.onUsage\(\{[\s\S]{0,200}?model,/, "usage must say which model produced it");
+assert.match(realtimeJs, /this\.reportUsage\(event\.usage, this\.transcriptionModel\)/, "input transcription must be billed to the model the session settled on");
 assert.match(offscreenJs, /pendingModels\.set\(model, perModel\)/, "usage must accumulate per model for comparison");
 assert.match(usageJs, /average: total \/ \(Number\(entry\.responses\) \|\| 1\)/, "models must be compared per response, not by raw total");
 assert.match(options, /id="realtime-model"/, "the translation model must be selectable in settings");
@@ -123,14 +136,58 @@ assert.match(options, /id="realtime-model"/, "the translation model must be sele
 // expensive tokens available and discarded them.
 assert.match(realtimeJs, /output_modalities: this\.verbatim \? \["text"\] : \["audio"\]/, "modes that never play a reply must not request audio output");
 assert.match(realtimeJs, /response\.output_text\.delta/, "text-only responses report through the text events");
+// A speaking mode that loses its dubbing loses the utterance entirely, unless the
+// session was also asked to transcribe what it heard.
+assert.match(realtimeJs, /transcription: this\.inputTranscription\(\)/, "speaking sessions must request a transcript of their input");
+// An update naming audio.input replaces that block, so transcription and turn
+// detection have to travel together or the utterance is never closed to transcribe.
+assert.match(realtimeJs, /transcription: this\.inputTranscription\(\) \} : \{\}\),\s*\n\s*turn_detection: this\.turnDetection\(\)/, "transcription and turn detection must be set in the same message");
+assert.match(realtimeJs, /conversation\.item\.input_audio_transcription\.completed/, "the spoken words arrive on the input transcription event");
+// A translate session streams the same words under a different name, with no
+// conversation item behind them.
+assert.match(realtimeJs, /session\.input_transcript\.delta/, "a translate session reports the spoken words on its own stream");
+assert.match(realtimeJs, /scheduleSourceFlush\(\)/, "streamed spoken words must be buffered into whole utterances");
+// Speech is read as it is said: the partial line is drawn while the utterance is
+// still open, and announced instead of waiting for the next poll.
+assert.match(realtimeJs, /this\.onSourcePartial\(this\.sourceBuffer\)/, "the unfinished utterance must reach the panel");
+assert.match(offscreenJs, /pendingSourceLines/, "deltas must grow one line rather than stacking half-sentences");
+assert.match(offscreenJs, /type: "TRANSCRIPT_UPDATED"/, "a new line must be announced, not waited for");
+assert.match(popupJs, /message\?\.type === "TRANSCRIPT_UPDATED"/, "the panel must redraw on the announcement");
+// Reading a line back in the other language is Chrome's own on-device translation:
+// no key, no request, no tokens — and it must stay that way.
+assert.equal(/fetch\(|XMLHttpRequest|api\.openai\.com/.test(localTranslatorJs), false, "the reading translation must never leave the machine");
+assert.match(localTranslatorJs, /Translator\.availability/, "availability must be checked before a translator is used");
+// The line reads either as it was said or as it means, swapped in place by a button on
+// the line itself. That press is also the gesture Chrome requires before it will fetch
+// a language pack, which is why the download hangs off it.
+assert.match(popupJs, /className = "translate-toggle"/, "every finished line must carry its own translate button");
+assert.match(popupJs, /toggleLineTranslation\(button\.dataset\.translate\)/, "pressing it must swap that line");
+assert.match(popupJs, /if \(shownTranslations\.delete\(id\)\)/, "pressing it again must put the original back");
+assert.match(popupJs, /await ensureLocalTranslation\(\)/, "the first press must be allowed to fetch the language pack");
+assert.match(popupJs, /pretranslateLines\(\)/, "finished lines must be translated before they are asked for");
+assert.match(popupJs, /if \(!item \|\| item\.pending/, "a half-spoken line must not be translated");
+// A session that will not take the field drops it silently, so the request has to be
+// checked against what came back and retried on a narrower shape.
+assert.match(realtimeJs, /transcriptionVariants\(\)/, "the transcription request must have fallbacks");
+assert.match(realtimeJs, /"whisper-1"/, "the last fallback must be the model every session has always taken");
+assert.match(realtimeJs, /session\?\.audio\?\.input\?\.transcription/, "the effective session config must be checked, not the request");
+assert.match(realtimeJs, /this\.sessionUpdatesSeen >= this\.sessionUpdatesSent/, "an early answer must not be read as a refusal of a later request");
+assert.match(contentModuleJs, /sourceTranscript: true/, "the conference tab owns your own voice and must transcribe it too");
+assert.match(offscreenJs, /sourceTranscript: mode\.audio/, "only the speaking modes pay for input transcription");
+assert.match(offscreenJs, /onSourceTranscript: \(text\) =>/, "the spoken words must reach the transcript");
+assert.match(offscreenJs, /kind = "translation"/, "transcript items must say whether they are the translation or the original");
+assert.match(offscreenJs, /item\.kind !== "source"/, "the summary must not read the same conversation twice");
 // Per-minute storage is what makes the minute/hour/day scales possible; a coarser
 // resolution cannot be un-aggregated later.
 assert.match(offscreenJs, /Math\.floor\(Date\.now\(\) \/ 60000\)/, "usage must be recorded per minute, not per day");
 assert.match(offscreenJs, /usageBuckets\[minute\] = values\.map/, "usage minutes must accumulate rather than overwrite");
 assert.match(offscreenJs, /USAGE_RETENTION_MINUTES/, "per-minute history must be bounded");
-// Most of a call is spent listening, so a session that opens with the call bills
-// for silence before a word is said.
-assert.match(offscreenJs, /if \(autoPauseSeconds\(\)\) \{[\s\S]*idleParked\.add\("incoming"\)/, "auto-pause must start a call parked instead of streaming immediately");
+// Most of a call is spent listening, so a side that hears nothing must park itself
+// and stop billing — including when the silence is the start of the call. It parks on
+// the same timer rather than immediately: connecting costs seconds, and the first
+// sentence is the one the user pressed Start to say.
+assert.match(offscreenJs, /if \(autoPauseSeconds\(\)\) \{[\s\S]*armIdlePark\("incoming"\)/, "a silent call must park itself on the auto-pause window");
+assert.match(offscreenJs, /idleParked\.add\(key\);\s*\n\s*applyInterpreterState/, "parking must close the session that is not being spoken into");
 assert.match(offscreenJs, /if \(outgoingInterpreterEligible\(settings\)\) setupSpeechGate\("outgoing"/, "a parked side still needs its gate, or nothing can unpark it");
 assert.match(contentModuleJs, /if \(idleParked\) return \{ ok: true \};/, "the conference tab must also start parked");
 assert.match(usageJs, /Math\.floor\(minute \/ size\) \* size/, "the chart must fold minutes into the selected scale");

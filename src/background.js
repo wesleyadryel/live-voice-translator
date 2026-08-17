@@ -184,7 +184,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "CONFERENCE_OUTGOING_TRANSCRIPT") {
     if (sender.tab?.id !== activeConferenceTabId) return false;
-    chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_OUTGOING_TRANSCRIPT", text: message.text, language: message.language }).catch(() => {});
+    chrome.runtime.sendMessage({ target: "offscreen", type: "ADD_OUTGOING_TRANSCRIPT", text: message.text, language: message.language, kind: message.kind }).catch(() => {});
     return false;
   }
 

@@ -216,7 +216,12 @@ function createTranslator(settings, audio) {
       stopMonitorFeed();
       applyMonitorState().catch(() => {});
     },
+    // This tab holds the outgoing interpreter, so it is also the only place your own
+    // words can be transcribed: without this the spoken column would only ever show
+    // the participant.
+    sourceTranscript: true,
     onTranscript: (text) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_TRANSCRIPT", text, language: settings.targetLanguage }).catch(() => {}),
+    onSourceTranscript: (text) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_TRANSCRIPT", text, language: settings.sourceLanguage, kind: "source" }).catch(() => {}),
     // This tab owns the outgoing interpreter, so its cost is only known here.
     onUsage: (usage) => chrome.runtime.sendMessage({ type: "CONFERENCE_USAGE", usage }).catch(() => {}),
     onDisconnect: (reason) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_DISCONNECTED", reason }).catch(() => {})
