@@ -73,6 +73,7 @@ export class RealtimeTranslator {
     this.pc = null;
     this.dataChannel = null;
     this.closedByUser = false;
+    this.streaming = true;
     this.wasConnected = false;
     this.responseInProgress = false;
     this.chunkTimer = null;
@@ -420,6 +421,22 @@ export class RealtimeTranslator {
       answerSdp = await response.text();
     }
     await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+  }
+
+  // Parking without hanging up. The sender keeps its place in the session and simply
+  // stops carrying audio: no packets leave, so nothing is streamed and nothing is
+  // billed, and coming back is a track swap instead of a new call — which is the
+  // difference between translating the first sentence after a pause and losing it to
+  // a handshake.
+  setStreaming(enabled) {
+    if (this.streaming === enabled || !this.pc) return;
+    this.streaming = enabled;
+    const [track] = this.inputStream?.getAudioTracks?.() || [];
+    for (const sender of this.pc.getSenders?.() || []) {
+      if (sender.track?.kind === "audio" || (!sender.track && enabled)) {
+        sender.replaceTrack(enabled ? track || null : null).catch(() => {});
+      }
+    }
   }
 
   close() {

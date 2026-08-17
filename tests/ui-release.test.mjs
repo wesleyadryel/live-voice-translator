@@ -71,7 +71,10 @@ assert.match(contentModuleJs, /CONFERENCE_MONITOR_OFFER/, "the return feed must 
 assert.match(offscreenJs, /acceptMonitorFeed/, "the offscreen document must play the return feed, out of tabCapture's reach");
 assert.match(offscreenJs, /outgoingMonitor\.muted = !outgoingTranslationAudible \|\| !outgoingMonitorOn/, "the return feed must follow the panel switch and stop when nothing is being sent");
 assert.match(offscreenJs, /incomingTranslator\?\.close\(\);\s*\n\s*incomingTranslator = null;/, "switching the interpreter off must close its realtime session so no tokens are spent");
-assert.match(offscreenJs, /incomingTranslator = incomingInterpreterWanted\(\) \?/, "a reconnect must not revive an interpreter that is switched off or parked");
+// A reconnect must not revive an interpreter that was switched off, and must not put
+// a parked one back on the wire: the session comes back, the audio does not.
+assert.match(offscreenJs, /incomingTranslator = incomingInterpreterOff \? null :/, "a reconnect must not revive an interpreter that is switched off");
+assert.match(offscreenJs, /incomingTranslator\?\.setStreaming\(incomingInterpreterWanted\(\)\)/, "a reconnect must leave a parked side silent");
 assert.match(offscreenJs, /!incomingInterpreterOff && !idleParked\.has\("incoming"\)/, "an idle-parked direction must stay closed until its speaker talks again");
 assert.match(offscreenJs, /settings\.summaryProvider === "ollama"/, "meeting notes must be able to run on a local model");
 // Using the local model has to be verifiable, both before and after a meeting.

@@ -638,32 +638,42 @@ function incomingInterpreterWanted() {
   return !incomingInterpreterOff && !idleParked.has("incoming");
 }
 
+// Switched off and parked are different things. A side that is switched off holds no
+// session at all. A side that is merely quiet keeps its session and stops carrying
+// audio: nothing is streamed and nothing is billed either way, but coming back costs a
+// track swap instead of a new WebRTC handshake — which is the difference between
+// translating the first sentence after a pause and losing it while reconnecting.
 async function applyInterpreterState() {
   if (!state.active || reconnecting) return;
   const settings = activeSettings;
   const mode = MODES[settings.mode] || MODES.both;
   const tasks = [];
-  if (!outgoingInterpreterWanted(settings)) {
+  if (!outgoingInterpreterEligible(settings)) {
     outgoingTranslator?.close();
     outgoingTranslator = null;
-  } else if (!outgoingTranslator) {
-    outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
-    tasks.push(outgoingTranslator.connect());
+  } else {
+    if (!outgoingTranslator) {
+      outgoingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, true));
+      tasks.push(outgoingTranslator.connect());
+    }
+    outgoingTranslator.setStreaming(outgoingInterpreterWanted(settings));
   }
-  if (!incomingInterpreterWanted()) {
+  if (incomingInterpreterOff) {
     incomingTranslator?.close();
     incomingTranslator = null;
-  } else if (!incomingTranslator) {
-    incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
-    tasks.push(incomingTranslator.connect());
+  } else {
+    if (!incomingTranslator) {
+      incomingTranslator = new RealtimeTranslator(translatorOptions(settings, mode, false));
+      tasks.push(incomingTranslator.connect());
+    }
+    incomingTranslator.setStreaming(incomingInterpreterWanted());
   }
   applyMuteState();
   await Promise.all(tasks);
 }
 
-// A direction whose speaker has gone quiet holds its realtime session open for
-// nothing. Parking it closes the session — no audio streamed, nothing billed — and
-// the speech gate reopens it the moment that side starts talking again.
+// A direction whose speaker has gone quiet stops sending audio — nothing streamed,
+// nothing billed — and the speech gate starts it again the moment that side talks.
 function releaseSpeechGates() {
   for (const gate of speechGates.values()) gate.close();
   speechGates.clear();
@@ -773,9 +783,13 @@ async function connectPair(settings, mode) {
   // A media tab (currently YouTube) needs only the tab-to-listener direction.
   // Avoiding a microphone stream keeps video translation usable without mic permission
   // and prevents an unused second realtime session.
-  outgoingTranslator = outgoingInterpreterWanted(settings) ? new RealtimeTranslator(translatorOptions(settings, mode, true)) : null;
-  incomingTranslator = incomingInterpreterWanted() ? new RealtimeTranslator(translatorOptions(settings, mode, false)) : null;
+  outgoingTranslator = outgoingInterpreterEligible(settings) ? new RealtimeTranslator(translatorOptions(settings, mode, true)) : null;
+  incomingTranslator = incomingInterpreterOff ? null : new RealtimeTranslator(translatorOptions(settings, mode, false));
   await Promise.all([outgoingTranslator?.connect(), incomingTranslator?.connect()]);
+  // A side that was parked when the connection was rebuilt keeps its session but not
+  // its stream, so a reconnect does not quietly restart the billing a pause stopped.
+  outgoingTranslator?.setStreaming(outgoingInterpreterWanted(settings));
+  incomingTranslator?.setStreaming(incomingInterpreterWanted());
 }
 
 function scheduleReconnect(settings, mode) {
