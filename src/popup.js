@@ -13,6 +13,7 @@ const elements = {
   modeHelp: $("#mode-help"), interfaceLanguage: $("#interface-language"), sourceLanguage: $("#source-language"), targetLanguage: $("#target-language"), outgoingDevice: $("#outgoing-device"), incomingDevice: $("#incoming-device"), captureContext: $("#capture-context"), swapLanguages: $("#swap-languages"),
   transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
   sourceFeed: $("#source-feed"), sourceEmpty: $("#source-empty"), sourceCount: $("#source-count"),
+  pipeline: $("#pipeline"), pipelineOutgoing: $("#pipeline-outgoing"), pipelineIncoming: $("#pipeline-incoming"),
   sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"), muteButtonsOutgoing: $("#mute-buttons-outgoing"),
   muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), addOutgoingMonitor: $("#add-outgoing-monitor"), muteOutgoing: $("#mute-outgoing"),
   muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), addIncomingReturn: $("#add-incoming-return"), muteIncoming: $("#mute-incoming")
@@ -317,6 +318,7 @@ function render(state = currentState) {
   }
   elements.notice.hidden = active || Boolean(currentSettings.recordingNoticeAccepted);
   renderMuteControls();
+  renderPipeline();
   renderTranscript();
   updateTimer();
 }
@@ -406,6 +408,33 @@ function fillFeed(feed, empty, items) {
     feed.append(line);
   }
   if (wasNearBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+// Named stages rather than a spinner: when a direction stops translating, the stage it
+// stopped on is the answer to why. "parked" is the one that looks like a fault and is
+// not — the side is quiet and nothing is being streamed or billed.
+const ACTIVITY_LABELS = {
+  listening: "stageListening",
+  hearing: "stageHearing",
+  sending: "stageSending",
+  thinking: "stageThinking",
+  receiving: "stageReceiving",
+  speaking: "stageSpeaking",
+  parked: "stageParked",
+  off: "stageOff",
+  stalled: "stageStalled",
+  idle: "stageIdle"
+};
+
+function renderPipeline() {
+  elements.pipeline.hidden = !active;
+  if (!active) return;
+  const activity = currentState.activity || {};
+  for (const [side, element] of [["outgoing", elements.pipelineOutgoing], ["incoming", elements.pipelineIncoming]]) {
+    const stage = ACTIVITY_LABELS[activity[side]] ? activity[side] : "idle";
+    element.dataset.stage = stage;
+    element.querySelector("span").textContent = t(locale, ACTIVITY_LABELS[stage]);
+  }
 }
 
 function renderTranscript() {
@@ -779,6 +808,7 @@ async function syncTranscript() {
   if (!result) return;
   liveTranscript = Array.isArray(result.liveTranscript) ? result.liveTranscript : [];
   if (result.state) currentState = { ...currentState, ...result.state };
+  renderPipeline();
   renderTranscript();
 }
 

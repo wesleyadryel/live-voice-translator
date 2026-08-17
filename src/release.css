@@ -267,6 +267,18 @@ body.panel-shell {
 .align-right { text-align: right; }
 .audio-visual { display: flex; align-items: center; justify-content: center; gap: 4px; height: 16px; margin-top: 8px; }
 .audio-visual span { width: 3px; height: 3px; border-radius: 3px; background: var(--line-strong); }
+/* One line per direction, naming the stage that direction is on. Reading it top to
+   bottom answers the question a silent interpreter raises: is it thinking, or stuck? */
+.pipeline { display: grid; gap: 3px; margin-top: 7px; }
+.pipeline-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.pipeline-side { color: var(--tertiary); font-size: 8px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pipeline-stage { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 9px; font-weight: 680; white-space: nowrap; }
+.pipeline-stage i { width: 6px; height: 6px; border-radius: 50%; background: var(--tertiary); }
+.pipeline-stage[data-stage="hearing"] i, .pipeline-stage[data-stage="sending"] i { background: var(--accent); animation: level 1s ease-in-out infinite; }
+.pipeline-stage[data-stage="thinking"] i, .pipeline-stage[data-stage="receiving"] i { background: #b07a1e; animation: level 1s ease-in-out infinite; }
+.pipeline-stage[data-stage="speaking"] i { background: var(--success); animation: level .7s ease-in-out infinite; }
+.pipeline-stage[data-stage="listening"] i { background: var(--accent); }
+.pipeline-stage[data-stage="off"], .pipeline-stage[data-stage="parked"], .pipeline-stage[data-stage="idle"] { color: var(--tertiary); }
 .is-live .audio-visual span { background: var(--accent); animation: level .9s ease-in-out infinite; }
 .is-live .audio-visual span:nth-child(2n) { animation-delay: -.18s; }
 .is-live .audio-visual span:nth-child(3n) { animation-delay: -.36s; }

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { t } from "../src/i18n.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, usageJs, usage, usageCss, options, history, releaseCss, optionsCss, historyCss, manifestText, localTranslatorJs] = await Promise.all([
+const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, historyJs, usageJs, usage, usageCss, options, history, releaseCss, optionsCss, historyCss, manifestText, localTranslatorJs, gateJs] = await Promise.all([
   read("../src/popup.html"),
   read("../src/popup.js"),
   read("../src/offscreen.js"),
@@ -20,7 +20,8 @@ const [popup, popupJs, offscreenJs, contentModuleJs, realtimeJs, backgroundJs, h
   read("../src/options-enhancements.css"),
   read("../src/history.css"),
   read("../manifest.json"),
-  read("../src/local-translator.js")
+  read("../src/local-translator.js"),
+  read("../src/speech-gate.js")
 ]);
 
 const allHtml = `${popup}\n${options}\n${history}\n${usage}`;
@@ -208,6 +209,20 @@ assert.match(offscreenJs, /USAGE_RETENTION_MINUTES/, "per-minute history must be
 // sentence is the one the user pressed Start to say.
 assert.match(offscreenJs, /if \(autoPauseSeconds\(\)\) \{[\s\S]*armIdlePark\("incoming"\)/, "a silent call must park itself on the auto-pause window");
 assert.match(offscreenJs, /idleParked\.add\(key\);\s*\n\s*applyInterpreterState/, "parking must close the session that is not being spoken into");
+// A hidden document's timers are throttled to a minute apart, and a gate on a timer
+// then leaves a parked side parked through whole sentences.
+assert.match(gateJs, /audioWorklet\.addModule/, "the speech gate must be measured on the audio thread");
+assert.match(gateJs, /if \(workletUrl\)/, "the timer must remain as the fallback");
+assert.match(offscreenJs, /workletUrl: chrome\.runtime\.getURL\("src\/speech-gate-processor\.js"\)/, "the offscreen gate must load the worklet");
+assert.match(manifestText, /speech-gate-processor\.js/, "the worklet must be reachable from a meeting page");
+// A silent interpreter is either working or stuck, and the panel has to say which.
+assert.match(realtimeJs, /ACTIVITY_BY_EVENT\[event\.type\]/, "each stage of the round trip must be reported");
+assert.match(popupJs, /renderPipeline\(\)/, "the panel must show the stage each direction is on");
+// A session that took the audio and answers nothing reports no error at all: the
+// events just stop, and only a clock notices.
+assert.match(realtimeJs, /startWatchdog\(\)/, "a session that stops answering must be noticed");
+assert.match(realtimeJs, /STALLABLE_STAGES\.includes\(this\.activity\)/, "only the stages where waiting is wrong may trip it");
+assert.match(realtimeJs, /stage !== this\.activity/, "progress must be a change of stage, not more traffic on the same one");
 assert.match(offscreenJs, /if \(outgoingInterpreterEligible\(settings\)\) setupSpeechGate\("outgoing"/, "a parked side still needs its gate, or nothing can unpark it");
 assert.match(contentModuleJs, /if \(idleParked\) return \{ ok: true \};/, "the conference tab must also start parked");
 assert.match(usageJs, /Math\.floor\(minute \/ size\) \* size/, "the chart must fold minutes into the selected scale");

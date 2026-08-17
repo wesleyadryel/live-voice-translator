@@ -358,7 +358,7 @@ function statusState() {
 }
 
 function freshState(overrides = {}) {
-  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, sourceTranscriptCount: 0, translatedUtteranceCount: 0, reconnectAttempt: 0, ...overrides };
+  return { active: false, phase: "idle", error: "", startedAt: 0, durationSeconds: 0, transcriptCount: 0, sourceTranscriptCount: 0, translatedUtteranceCount: 0, reconnectAttempt: 0, activity: { outgoing: "idle", incoming: "idle" }, ...overrides };
 }
 
 async function storageGet(defaults = {}) {
@@ -461,6 +461,25 @@ function settlePendingSourceLines() {
     state.sourceTranscriptCount += 1;
   }
   pendingSourceLines.clear();
+}
+
+// What each direction is doing right now, so the panel can name the stage instead of
+// leaving the user to guess whether a silent interpreter is thinking or stuck. Held on
+// the state that already travels to the panel, and announced on the same channel as a
+// new line of text.
+// Off and parked are states of the side itself rather than stages of an utterance, and
+// they outrank whatever the last event was: a parked side is not "waiting for the
+// model", it is not listening at all.
+function markSideActivity(direction, { off, parked }) {
+  if (off) return setActivity(direction, "off");
+  if (parked) return setActivity(direction, "parked");
+  if (["off", "parked", "idle", undefined].includes(state.activity?.[direction])) setActivity(direction, "listening");
+}
+
+function setActivity(direction, stage) {
+  if (!state.active || state.activity?.[direction] === stage) return;
+  state.activity = { ...state.activity, [direction]: stage };
+  notifyTranscript();
 }
 
 // The panel is polled once a second, which is slower than speech reads. A change is
@@ -774,6 +793,7 @@ function translatorOptions(settings, mode, outgoing) {
     onSourceTranscript: (text) => {
       writeSourceLine(outgoing ? tr(settings, "speakerYou") : tr(settings, "speakerParticipant"), text, forwards ? settings.sourceLanguage : settings.targetLanguage, outgoing ? "you" : "participant", true);
     },
+    onActivity: (stage) => setActivity(outgoing ? "outgoing" : "incoming", stage),
     onState: (phase) => { if (state.active && !reconnecting) state.phase = phase; },
     // The participant's translated voice only exists once its track arrives, and a
     // reconnect delivers a new one, so the return feed is rebuilt here.
@@ -821,6 +841,7 @@ async function applyInterpreterState() {
     }
     outgoingTranslator.setStreaming(outgoingInterpreterWanted(settings));
   }
+  markSideActivity("outgoing", { off: !outgoingInterpreterEligible(settings), parked: idleParked.has("outgoing") });
   if (incomingInterpreterOff) {
     incomingTranslator?.close();
     incomingTranslator = null;
@@ -831,6 +852,7 @@ async function applyInterpreterState() {
     }
     incomingTranslator.setStreaming(incomingInterpreterWanted());
   }
+  markSideActivity("incoming", { off: incomingInterpreterOff, parked: idleParked.has("incoming") });
   applyMuteState();
   await Promise.all(tasks);
 }
@@ -931,6 +953,10 @@ function setupSpeechGate(key, stream) {
   const idleSeconds = autoPauseSeconds();
   if (!idleSeconds || !stream) return;
   const gate = createSpeechGate(stream, {
+    // Measured on the audio thread: this document is hidden, and a hidden document's
+    // timers are throttled to a minute apart after a few minutes of silence — which is
+    // how long a parked side could stay parked with someone talking into it.
+    workletUrl: chrome.runtime.getURL("src/speech-gate-processor.js"),
     onSpeechStart: () => {
       clearTimeout(idleTimers.get(key));
       idleTimers.delete(key);
@@ -953,6 +979,8 @@ async function connectPair(settings, mode) {
   // its stream, so a reconnect does not quietly restart the billing a pause stopped.
   outgoingTranslator?.setStreaming(outgoingInterpreterWanted(settings));
   incomingTranslator?.setStreaming(incomingInterpreterWanted());
+  markSideActivity("outgoing", { off: !outgoingTranslator, parked: idleParked.has("outgoing") });
+  markSideActivity("incoming", { off: !incomingTranslator, parked: idleParked.has("incoming") });
 }
 
 function scheduleReconnect(settings, mode) {
@@ -1058,6 +1086,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "ADD_USAGE") {
     recordUsage(message.usage || {});
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === "SET_ACTIVITY") {
+    setActivity(message.direction === "outgoing" ? "outgoing" : "incoming", String(message.stage || "listening"));
     sendResponse({ ok: true });
     return false;
   }

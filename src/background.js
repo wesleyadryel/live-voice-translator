@@ -211,6 +211,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "CONFERENCE_ACTIVITY") {
+    if (sender.tab?.id !== activeConferenceTabId) return false;
+    chrome.runtime.sendMessage({ target: "offscreen", type: "SET_ACTIVITY", direction: "outgoing", stage: message.stage }).catch(() => {});
+    return false;
+  }
+
   if (message.type === "CONFERENCE_OUTGOING_DISCONNECTED") {
     if (sender.tab?.id !== activeConferenceTabId) return false;
     chrome.runtime.sendMessage({ target: "offscreen", type: "OUTGOING_DISCONNECTED", reason: message.reason || "disconnected" }).catch(() => {});

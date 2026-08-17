@@ -39,7 +39,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/conference-content-module.js", "src/realtime.js", "src/speech-gate.js", "src/audio-gain.js"],
+      "resources": ["src/conference-content-module.js", "src/realtime.js", "src/speech-gate.js", "src/speech-gate-processor.js", "src/audio-gain.js"],
       "matches": ["https://meet.google.com/*", "https://*.zoom.us/*", "https://telemost.yandex.ru/*", "https://telemost.yandex.com/*", "https://web.telegram.org/*", "https://*.discord.com/*"]
     }
   ],

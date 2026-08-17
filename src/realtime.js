@@ -19,6 +19,29 @@ export const isRealtimeTranslateModel = (model) => /translate/i.test(String(mode
 // the older ones are still accepted by the session but do not always produce anything.
 export const SOURCE_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
 
+// The stages of one utterance's round trip, keyed by the event that begins each. A
+// session that stalls stops somewhere in this list, and the panel shows where.
+// How long a direction may sit on one stage before the session is treated as dead. A
+// long sentence moves between stages while it is being said, so standing still for
+// this long is not slowness — it is a session that took the audio and will never
+// answer. Nothing else notices: no error arrives, the events simply stop.
+const STALL_MS = 10000;
+const STALLABLE_STAGES = ["sending", "thinking", "receiving"];
+
+const ACTIVITY_BY_EVENT = {
+  "input_audio_buffer.speech_started": "hearing",
+  "input_audio_buffer.speech_stopped": "sending",
+  "input_audio_buffer.committed": "sending",
+  "response.created": "thinking",
+  "session.input_transcript.delta": "thinking",
+  "response.output_audio.delta": "receiving",
+  "response.audio.delta": "receiving",
+  "session.output_transcript.delta": "receiving",
+  "output_audio_buffer.started": "speaking",
+  "output_audio_buffer.stopped": "listening",
+  "response.done": "listening"
+};
+
 // 0 leaves the model's own semantic detector in charge: it ends a turn when the
 // sentence sounds finished, which suits continuous speech. A speaker who leaves
 // gaps between words gets cut mid-thought by that, so any value above 0 replaces it
@@ -46,7 +69,7 @@ export const realtimeUrl = (model) => {
 };
 
 export class RealtimeTranslator {
-  constructor({ apiKey, model, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onSourceTranscript, onSourcePartial, onDisconnect, onOutputTrack, onUsage, exchangeSdp, verbatim = false, sourceTranscript = false, manualChunkMs = 0, pauseMs = PAUSE_AUTO_MS }) {
+  constructor({ apiKey, model, inputStream, outputElement, monitorElement, from, to, voice, onState, onTranscript, onSourceTranscript, onSourcePartial, onActivity, onDisconnect, onOutputTrack, onUsage, exchangeSdp, verbatim = false, sourceTranscript = false, manualChunkMs = 0, pauseMs = PAUSE_AUTO_MS }) {
     this.model = model || DEFAULT_REALTIME_MODEL;
     this.apiKey = apiKey;
     this.inputStream = inputStream;
@@ -59,6 +82,7 @@ export class RealtimeTranslator {
     this.onTranscript = onTranscript || (() => {});
     this.onSourceTranscript = onSourceTranscript || (() => {});
     this.onSourcePartial = onSourcePartial || (() => {});
+    this.onActivity = onActivity || (() => {});
     this.onDisconnect = onDisconnect || (() => {});
     this.onOutputTrack = onOutputTrack || (() => {});
     this.onUsage = onUsage || (() => {});
@@ -75,8 +99,14 @@ export class RealtimeTranslator {
     this.closedByUser = false;
     this.streaming = true;
     this.wasConnected = false;
+    this.activity = "listening";
+    this.lastProgressAt = Date.now();
+    this.startWatchdog();
     this.responseInProgress = false;
     this.chunkTimer = null;
+    this.watchdogTimer = null;
+    this.activity = "listening";
+    this.lastProgressAt = 0;
     this.transcriptFlushTimer = null;
     // Which transcription variant has been asked for. -1 is "none yet"; the session
     // answers every update with its effective configuration, so the next one is only
@@ -299,6 +329,19 @@ export class RealtimeTranslator {
       this.sessionUpdatesSeen += 1;
       if (this.sessionUpdatesSeen >= this.sessionUpdatesSent) this.reviewTranscription(event.session);
     }
+    // Where this direction is in the round trip, named as the user would describe it:
+    // hearing you, sending it up, waiting on the model, playing the answer back. It is
+    // reported rather than inferred so a stage that never arrives is visible as a stage
+    // that never arrives.
+    const stage = ACTIVITY_BY_EVENT[event.type];
+    if (stage && stage !== this.activity) {
+      // Progress is a change of stage, not merely another event: a session that keeps
+      // sending input deltas while never producing output has stopped, however busy
+      // its traffic looks.
+      this.activity = stage;
+      this.lastProgressAt = Date.now();
+      this.onActivity(stage);
+    }
     if (event.type === "response.created") this.responseInProgress = true;
     if (event.type === "response.done") {
       this.responseInProgress = false;
@@ -423,6 +466,22 @@ export class RealtimeTranslator {
     await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
   }
 
+  // A stalled session is indistinguishable from a quiet one until someone waits for it,
+  // so this waits. Recovery is what the user would do by hand — take the session down
+  // and build it again — and the same reconnect path handles it, backoff included.
+  startWatchdog() {
+    clearInterval(this.watchdogTimer);
+    this.watchdogTimer = setInterval(() => {
+      if (this.closedByUser || !this.streaming || !this.wasConnected) return;
+      if (!STALLABLE_STAGES.includes(this.activity) || Date.now() - this.lastProgressAt < STALL_MS) return;
+      console.warn("[LiveVoice] session stalled on", this.activity, "— rebuilding");
+      this.activity = "stalled";
+      this.lastProgressAt = Date.now();
+      this.onActivity("stalled");
+      this.onDisconnect("stalled");
+    }, 2000);
+  }
+
   // Parking without hanging up. The sender keeps its place in the session and simply
   // stops carrying audio: no packets leave, so nothing is streamed and nothing is
   // billed, and coming back is a track swap instead of a new call — which is the
@@ -443,6 +502,8 @@ export class RealtimeTranslator {
     this.closedByUser = true;
     clearInterval(this.chunkTimer);
     this.chunkTimer = null;
+    clearInterval(this.watchdogTimer);
+    this.watchdogTimer = null;
     this.flushTranscript();
     this.flushSource();
     this.dataChannel?.close();

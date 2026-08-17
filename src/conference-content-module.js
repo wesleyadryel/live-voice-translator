@@ -106,6 +106,9 @@ function setupSpeechGate() {
   const idleSeconds = Math.max(0, Number(currentSettings?.autoPauseSeconds) || 0);
   if (!idleSeconds || !microphoneInput) return;
   speechGate = createSpeechGate(audioStage?.analyser || microphoneInput, {
+    // A backgrounded meeting tab throttles its timers too, and a gate that ticks once
+    // a minute parks the interpreter through whole sentences.
+    workletUrl: chrome.runtime.getURL("src/speech-gate-processor.js"),
     onSpeechStart: () => {
       clearTimeout(idleTimer);
       idleTimer = null;
@@ -224,6 +227,9 @@ function createTranslator(settings, audio) {
     sourceTranscript: true,
     onTranscript: (text) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_TRANSCRIPT", text, language: settings.targetLanguage }).catch(() => {}),
     onSourceTranscript: (text) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_TRANSCRIPT", text, language: settings.sourceLanguage, kind: "source" }).catch(() => {}),
+    // This tab holds the outgoing session, so the panel can only name its stage if the
+    // tab says so.
+    onActivity: (stage) => chrome.runtime.sendMessage({ type: "CONFERENCE_ACTIVITY", stage }).catch(() => {}),
     // This tab owns the outgoing interpreter, so its cost is only known here.
     onUsage: (usage) => chrome.runtime.sendMessage({ type: "CONFERENCE_USAGE", usage }).catch(() => {}),
     onDisconnect: (reason) => chrome.runtime.sendMessage({ type: "CONFERENCE_OUTGOING_DISCONNECTED", reason }).catch(() => {})
