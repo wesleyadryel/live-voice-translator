@@ -14,6 +14,7 @@ const elements = {
   transcript: $("#live-transcript"), transcriptFeed: $("#transcript-feed"), transcriptEmpty: $("#transcript-empty"), transcriptCount: $("#transcript-count"), transcriptPolicy: $("#transcript-policy"),
   sourceFeed: $("#source-feed"), sourceEmpty: $("#source-empty"), sourceCount: $("#source-count"),
   pipeline: $("#pipeline"), pipelineOutgoing: $("#pipeline-outgoing"), pipelineIncoming: $("#pipeline-incoming"),
+  audioModal: $("#audio-modal"), openAudio: $("#open-audio"), closeAudio: $("#close-audio"),
   sessionControls: $("#session-controls"), muteRowOutgoing: $("#mute-row-outgoing"), muteRowIncoming: $("#mute-row-incoming"), muteButtonsOutgoing: $("#mute-buttons-outgoing"),
   muteOutgoingInterpreter: $("#mute-outgoing-interpreter"), muteOutgoingTranslation: $("#mute-outgoing-translation"), addOutgoingOriginal: $("#add-outgoing-original"), addOutgoingMonitor: $("#add-outgoing-monitor"), muteOutgoing: $("#mute-outgoing"),
   muteIncomingInterpreter: $("#mute-incoming-interpreter"), muteIncomingTranslation: $("#mute-incoming-translation"), addIncomingOriginal: $("#add-incoming-original"), addIncomingReturn: $("#add-incoming-return"), muteIncoming: $("#mute-incoming")
@@ -31,6 +32,9 @@ let busy = false;
 let currentMode = "both";
 let currentSettings = {};
 let locale = "en";
+// What the page's labels were last written in, so they are only written again when the
+// language actually changes.
+let localizedLocale = "";
 let currentState = { active: false, phase: "idle", error: "" };
 let lastStartedAt = 0;
 let actionError = "";
@@ -170,7 +174,7 @@ async function microphonePermission() {
 function setCheck(name, state, copy) {
   const item = document.querySelector(`[data-check="${name}"]`);
   item.dataset.state = state;
-  item.querySelector("small").textContent = copy;
+  setText(item.querySelector("small"), copy);
 }
 
 async function renderPreflight(settings) {
@@ -303,18 +307,18 @@ function render(state = currentState) {
   elements.toggle.classList.toggle("is-loading", busy || ["connecting", "reconnecting", "summarizing"].includes(state.phase));
   elements.toggle.disabled = busy;
   document.querySelectorAll("[data-mode], .quick-settings select, #swap-languages").forEach((control) => { control.disabled = active || busy; });
-  elements.toggleLabel.textContent = active ? t(locale, "stop") : activeCaptureKind === "media" ? t(locale, "startTranslation") : t(locale, START_LABELS[currentMode]);
+  setText(elements.toggleLabel, active ? t(locale, "stop") : activeCaptureKind === "media" ? t(locale, "startTranslation") : t(locale, START_LABELS[currentMode]));
   const iconPath = elements.toggle.querySelector(".button-symbol path");
   if (iconPath) iconPath.setAttribute("d", active ? "M8 8h8v8H8z" : "m9 7 8 5-8 5V7Z");
-  elements.status.textContent = t(locale, PHASES[state.phase] || (active ? "live" : "ready"));
+  setText(elements.status, t(locale, PHASES[state.phase] || (active ? "live" : "ready")));
   const error = state.error ? friendlyError(state.error) : actionError;
   elements.error.hidden = !error;
-  elements.errorCopy.textContent = error;
+  setText(elements.errorCopy, error);
   if (active && activeCaptureKind === "media") {
     const progress = MEDIA_PROGRESS[locale] || MEDIA_PROGRESS.en;
-    elements.modeHelp.textContent = state.translatedUtteranceCount ? progress.translated(state.translatedUtteranceCount) : progress.waiting;
+    setText(elements.modeHelp, state.translatedUtteranceCount ? progress.translated(state.translatedUtteranceCount) : progress.waiting);
   } else {
-    elements.modeHelp.textContent = t(locale, MODE_HINTS[currentMode]);
+    setText(elements.modeHelp, t(locale, MODE_HINTS[currentMode]));
   }
   elements.notice.hidden = active || Boolean(currentSettings.recordingNoticeAccepted);
   renderMuteControls();
@@ -368,45 +372,90 @@ function translateButton(item, showing) {
 // the left, the words as they were spoken on the right. Reading them side by side is
 // also what makes a failed dubbing obvious — the right column keeps filling while the
 // left one stops.
+// Writing the same string back replaces the text node and makes the browser repaint
+// it, which at a refresh a second is the flicker the panel was showing.
+function setText(element, value) {
+  if (element && element.textContent !== value) element.textContent = value;
+}
+
+function createLine() {
+  const line = document.createElement("article");
+  const meta = document.createElement("header");
+  const speaker = document.createElement("strong");
+  const copy = document.createElement("p");
+  const time = document.createElement("time");
+  // Timestamp and buttons travel as one group on the right; loose in the header they
+  // would be spread apart by the same rule that pushes the speaker to the left.
+  const actions = document.createElement("div");
+  actions.className = "line-actions";
+  actions.append(time);
+  meta.append(speaker, actions);
+  line.append(meta, copy);
+  return line;
+}
+
+// The same line object, rewritten only where it differs. A line that has not changed
+// keeps its node, its hover state and the scroll position around it.
+function renderLine(line, item) {
+  const showing = shownTranslations.has(item.id);
+  const translation = lineTranslations.get(item.id);
+  // Original speech is shown quieter than the translation: it is the same utterance in
+  // the language it was said, kept so nothing is lost when no dubbing follows.
+  const className = `transcript-line ${item.speakerRole === "you" ? "is-you" : "is-participant"}${item.kind === "source" ? " is-source" : ""}${item.pending ? " is-pending" : ""}${showing ? " is-translated" : ""}`;
+  if (line.className !== className) line.className = className;
+  if (line.dataset.id !== item.id) line.dataset.id = item.id;
+  setText(line.querySelector("strong"), item.speaker || t(locale, item.speakerRole === "you" ? "speakerYou" : "speakerParticipant"));
+  setText(line.querySelector("time"), formatDuration(item.offsetSeconds || 0));
+  // The line reads either as it was said or as it means, never both at once: the button
+  // swaps the text in place rather than adding a second copy of it.
+  setText(line.querySelector("p"), showing ? translation || t(locale, "translating") : item.text);
+
+  const actions = line.querySelector(".line-actions");
+  // A line still being spoken has no settled text to translate or say again.
+  const wantsSpeak = !item.pending && item.kind === "source";
+  const wantsTranslate = !item.pending;
+  const speak = actions.querySelector(".speak-line");
+  const translate = actions.querySelector(".translate-toggle");
+  if (wantsSpeak && !speak) actions.append(speakButton(item));
+  if (!wantsSpeak && speak) speak.remove();
+  if (wantsTranslate && !translate) actions.append(translateButton(item, showing));
+  if (!wantsTranslate && translate) translate.remove();
+  const speaking = String(speakingLineId === item.id);
+  const currentSpeak = actions.querySelector(".speak-line");
+  if (currentSpeak && currentSpeak.getAttribute("aria-pressed") !== speaking) {
+    currentSpeak.setAttribute("aria-pressed", speaking);
+    currentSpeak.title = t(locale, speakingLineId === item.id ? "stopSpeaking" : "speakLine");
+    currentSpeak.setAttribute("aria-label", currentSpeak.title);
+  }
+  const currentTranslate = actions.querySelector(".translate-toggle");
+  if (currentTranslate && currentTranslate.getAttribute("aria-pressed") !== String(showing)) {
+    currentTranslate.setAttribute("aria-pressed", String(showing));
+    currentTranslate.title = t(locale, showing ? "showOriginal" : "showTranslation");
+    currentTranslate.setAttribute("aria-label", currentTranslate.title);
+  }
+}
+
 function fillFeed(feed, empty, items) {
   const wasNearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48;
-  feed.replaceChildren();
   if (!items.length) {
-    feed.append(empty);
+    if (empty.parentNode !== feed) feed.replaceChildren(empty);
     return;
   }
+  if (empty.parentNode === feed) empty.remove();
+  // Kept by id and moved only when the order actually changed, so a new word in the
+  // line being spoken does not rebuild every line above it.
+  const existing = new Map(Array.from(feed.children, (node) => [node.dataset.id, node]));
+  let previous = null;
   for (const item of items) {
-    const line = document.createElement("article");
-    // Original speech is shown quieter than the translation: it is the same utterance
-    // in the language it was said, kept so nothing is lost when no dubbing follows.
-    line.className = `transcript-line ${item.speakerRole === "you" ? "is-you" : "is-participant"}${item.kind === "source" ? " is-source" : ""}${item.pending ? " is-pending" : ""}`;
-    line.dataset.id = item.id;
-    const meta = document.createElement("header");
-    const speaker = document.createElement("strong");
-    const time = document.createElement("time");
-    const copy = document.createElement("p");
-    speaker.textContent = item.speaker || t(locale, item.speakerRole === "you" ? "speakerYou" : "speakerParticipant");
-    time.textContent = formatDuration(item.offsetSeconds || 0);
-    // The line reads either as it was said or as it means, never both at once: the
-    // button swaps the text in place rather than adding a second copy of it.
-    const showing = shownTranslations.has(item.id);
-    const translation = lineTranslations.get(item.id);
-    copy.textContent = showing ? translation || t(locale, "translating") : item.text;
-    if (showing) line.classList.add("is-translated");
-    // Timestamp and buttons travel as one group on the right; loose in the header they
-    // would be spread apart by the same rule that pushes the speaker to the left.
-    const actions = document.createElement("div");
-    actions.className = "line-actions";
-    actions.append(time);
-    // A line still being spoken has no settled text to translate or say again.
-    if (!item.pending) {
-      if (item.kind === "source") actions.append(speakButton(item));
-      actions.append(translateButton(item, showing));
-    }
-    meta.append(speaker, actions);
-    line.append(meta, copy);
-    feed.append(line);
+    let line = existing.get(item.id);
+    if (line) existing.delete(item.id);
+    else line = createLine();
+    renderLine(line, item);
+    const expected = previous ? previous.nextElementSibling : feed.firstElementChild;
+    if (expected !== line) feed.insertBefore(line, expected || null);
+    previous = line;
   }
+  for (const stale of existing.values()) stale.remove();
   if (wasNearBottom) feed.scrollTop = feed.scrollHeight;
 }
 
@@ -432,14 +481,18 @@ function renderPipeline() {
   const activity = currentState.activity || {};
   for (const [side, element] of [["outgoing", elements.pipelineOutgoing], ["incoming", elements.pipelineIncoming]]) {
     const stage = ACTIVITY_LABELS[activity[side]] ? activity[side] : "idle";
+    const label = t(locale, ACTIVITY_LABELS[stage]);
     element.dataset.stage = stage;
-    element.querySelector("span").textContent = t(locale, ACTIVITY_LABELS[stage]);
+    setText(element.querySelector("span"), label);
+    // The column is a fixed width, so the longest stages are clipped; the whole name is
+    // still available on hover.
+    element.title = label;
   }
 }
 
 function renderTranscript() {
   const savedWithMeeting = ["notes", "both", "transcript"].includes(currentMode);
-  elements.transcriptPolicy.textContent = t(locale, savedWithMeeting ? "transcriptSaved" : "transcriptTemporary");
+  setText(elements.transcriptPolicy, t(locale, savedWithMeeting ? "transcriptSaved" : "transcriptTemporary"));
   elements.transcriptPolicy.dataset.saved = String(savedWithMeeting);
   // The spoken column exists to catch a dubbing that failed. The note-only modes never
   // dub anything — their single feed already is the spoken words — so there the panel
@@ -448,8 +501,8 @@ function renderTranscript() {
   elements.transcript.dataset.columns = dubbing ? "2" : "1";
   const translated = liveTranscript.filter((item) => item.kind !== "source");
   const spoken = liveTranscript.filter((item) => item.kind === "source");
-  elements.transcriptCount.textContent = String(currentState.transcriptCount || translated.length || 0);
-  elements.sourceCount.textContent = String(currentState.sourceTranscriptCount || spoken.length || 0);
+  setText(elements.transcriptCount, String(currentState.transcriptCount || translated.length || 0));
+  setText(elements.sourceCount, String(currentState.sourceTranscriptCount || spoken.length || 0));
 
   const signature = `${locale}:${liveTranscript.map((item) => `${item.id}:${item.text}`).join("|")}`;
   if (signature === transcriptSignature) {
@@ -599,7 +652,7 @@ function updateTranscriptEmptyState() {
 function updateTimer() {
   const startedAt = currentState.startedAt || lastStartedAt;
   const seconds = active && startedAt ? (Date.now() - startedAt) / 1000 : currentState.durationSeconds || 0;
-  elements.timer.textContent = formatDuration(seconds);
+  setText(elements.timer, formatDuration(seconds));
   elements.timer.dateTime = `PT${Math.floor(seconds)}S`;
 }
 
@@ -608,11 +661,16 @@ async function refresh() {
   currentSettings = settings;
   mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, Boolean(settings[key])]));
   locale = settings.interfaceLanguage || "en";
-  localizePage(locale);
+  // Every label on the page, rewritten once a second, is a repaint of the whole panel
+  // for a language that changes about once a year.
+  if (locale !== localizedLocale) {
+    localizePage(locale);
+    localizedLocale = locale;
+  }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   activeTabUrl = tab?.url || "";
   activeCaptureKind = captureKindFor(tab?.url);
-  elements.captureContext.textContent = (CAPTURE_LABELS[locale] || CAPTURE_LABELS.en)[activeCaptureKind];
+  setText(elements.captureContext, (CAPTURE_LABELS[locale] || CAPTURE_LABELS.en)[activeCaptureKind]);
   renderCaptureContext(activeCaptureKind);
   document.title = t(locale, "appTitle");
   currentMode = settings.mode;
@@ -622,12 +680,12 @@ async function refresh() {
   elements.sourceLanguage.value = languages.source;
   elements.targetLanguage.value = languages.target;
   elements.outgoingDevice.closest(".quick-setting").hidden = true;
-  elements.keyStatus.textContent = settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured");
-  elements.usage.textContent = t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 });
-  elements.source.textContent = languageLabel(languages.source);
-  elements.target.textContent = languageLabel(languages.target);
+  setText(elements.keyStatus, settings.apiKey ? maskKey(settings.apiKey) : t(locale, "apiNotConfigured"));
+  setText(elements.usage, t(locale, "used", { minutes: Math.ceil((settings.usageSeconds || 0) / 60), sessions: settings.sessionCount || 0 }));
+  setText(elements.source, languageLabel(languages.source));
+  setText(elements.target, languageLabel(languages.target));
   elements.setup.hidden = Boolean(settings.apiKey);
-  elements.setupCopy.textContent = settings.apiKey ? "" : t(locale, "setupCopy");
+  setText(elements.setupCopy, settings.apiKey ? "" : t(locale, "setupCopy"));
   renderAudio(settings);
   await renderLocalTranslation(settings).catch(() => {});
   const result = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
@@ -811,6 +869,22 @@ async function syncTranscript() {
   renderPipeline();
   renderTranscript();
 }
+
+// The levels, mutes and tuning are set once and then left alone, so they live behind a
+// button instead of taking half the panel from the conversation. Nothing about them
+// changes here — only when they are on screen.
+function setAudioModal(open) {
+  elements.audioModal.hidden = !open;
+  elements.openAudio.setAttribute("aria-expanded", String(open));
+  if (open) elements.closeAudio.focus();
+  else elements.openAudio.focus();
+}
+
+elements.openAudio.addEventListener("click", () => setAudioModal(elements.audioModal.hidden));
+elements.closeAudio.addEventListener("click", () => setAudioModal(false));
+// Clicking the backdrop is the same as closing; clicking the card itself is not.
+elements.audioModal.addEventListener("click", (event) => { if (event.target === elements.audioModal) setAudioModal(false); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !elements.audioModal.hidden) setAudioModal(false); });
 
 elements.transcript.addEventListener("click", (event) => {
   const translate = event.target.closest?.(".translate-toggle");

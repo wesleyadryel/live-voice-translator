@@ -218,6 +218,17 @@ assert.match(manifestText, /speech-gate-processor\.js/, "the worklet must be rea
 // A silent interpreter is either working or stuck, and the panel has to say which.
 assert.match(realtimeJs, /ACTIVITY_BY_EVENT\[event\.type\]/, "each stage of the round trip must be reported");
 assert.match(popupJs, /renderPipeline\(\)/, "the panel must show the stage each direction is on");
+// A refresh a second must not repaint what has not changed: rebuilding the feed or
+// rewriting every label is seen as the panel flickering.
+assert.equal(/feed\.replaceChildren\(\);/.test(popupJs), false, "the transcript must be updated in place, not rebuilt");
+assert.match(popupJs, /if \(element && element\.textContent !== value\)/, "text must only be written when it differs");
+assert.match(popupJs, /if \(locale !== localizedLocale\)/, "the page must only be relabelled when the language changes");
+// Levels and tuning are set once and left alone; the conversation is what the panel is
+// for, so they wait behind a button.
+assert.match(popup, /id="audio-modal"/, "the audio controls must live in a dialog");
+assert.match(popup, /<div class="modal-body">[\s\S]*id="session-controls"/, "the mute rows and sliders must be inside it");
+assert.match(popupJs, /setAudioModal\(false\)/, "the dialog must be closable");
+assert.match(popupJs, /event\.key === "Escape"/, "Escape must close it");
 // A session that took the audio and answers nothing reports no error at all: the
 // events just stop, and only a clock notices.
 assert.match(realtimeJs, /startWatchdog\(\)/, "a session that stops answering must be noticed");

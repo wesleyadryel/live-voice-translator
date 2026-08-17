@@ -270,9 +270,14 @@ body.panel-shell {
 /* One line per direction, naming the stage that direction is on. Reading it top to
    bottom answers the question a silent interpreter raises: is it thinking, or stuck? */
 .pipeline { display: grid; gap: 3px; margin-top: 7px; }
-.pipeline-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+/* The stage name changes on every step of the round trip, and the shortest and longest
+   of them differ by half a line. A reserved column keeps the block still: a status that
+   moves the layout while it reports is harder to read than the words are worth. */
+.pipeline-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px; align-items: center; gap: 8px; min-height: 13px; }
 .pipeline-side { color: var(--tertiary); font-size: 8px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pipeline-stage { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 9px; font-weight: 680; white-space: nowrap; }
+.pipeline-stage { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; min-width: 0; color: var(--secondary); font-size: 9px; font-weight: 680; white-space: nowrap; }
+.pipeline-stage span { overflow: hidden; text-overflow: ellipsis; }
+.pipeline-stage i { flex: none; }
 .pipeline-stage i { width: 6px; height: 6px; border-radius: 50%; background: var(--tertiary); }
 .pipeline-stage[data-stage="hearing"] i, .pipeline-stage[data-stage="sending"] i { background: var(--accent); animation: level 1s ease-in-out infinite; }
 .pipeline-stage[data-stage="thinking"] i, .pipeline-stage[data-stage="receiving"] i { background: #b07a1e; animation: level 1s ease-in-out infinite; }
@@ -399,6 +404,51 @@ body.panel-shell {
 .button-progress { justify-self: center; width: 14px; height: 14px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; opacity: 0; }
 .session-button.is-loading .button-progress { opacity: 1; animation: spin .7s linear infinite; }
 .is-live .session-button { background: linear-gradient(180deg, #e14359, var(--danger)); box-shadow: 0 8px 18px rgba(216,45,69,.18); }
+/* The audio controls, out of the way until asked for. Covers the panel rather than the
+   page: this is a side panel, and there is nothing else of ours on screen to dim. */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(24,42,71,.34);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: panel-in 180ms var(--ease) both;
+}
+.modal[hidden] { display: none; }
+.modal-card {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 460px);
+  max-height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.85);
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgba(255,255,255,.96), rgba(244,249,255,.94));
+  box-shadow: var(--shadow-md);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(130,151,184,.2);
+}
+.modal-header strong { font-size: 11px; font-weight: 760; }
+.modal-body {
+  min-height: 0;
+  padding: 10px 12px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113,135,169,.28) transparent;
+}
+.modal-body .quick-setting { margin-bottom: 8px; }
+.audio-button svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .session-controls { display: grid; gap: 5px; margin-top: 7px; }
 .session-controls[hidden] { display: none; }
 .mute-row { display: grid; gap: 4px; }

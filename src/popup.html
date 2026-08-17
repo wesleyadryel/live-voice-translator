@@ -25,7 +25,7 @@
     <section class="setup-banner" id="setup-banner" hidden><div><strong data-i18n="configureOpenAI">Connect OpenAI</strong><p id="setup-copy" data-i18n="setupCopy">Add an API key to start translating.</p></div><button id="setup-action" data-i18n="configure">Set up</button></section>
 
     <section class="session-surface" aria-live="polite">
-      <div class="session-meta"><span class="phase-pill"><i></i><span id="status-label" data-i18n="ready">Ready</span></span><span class="capture-context" id="capture-context">Browser meeting</span><time id="session-timer" datetime="PT0S">00:00</time></div>
+      <div class="session-meta"><span class="phase-pill"><i></i><span id="status-label" data-i18n="ready">Ready</span></span><span class="capture-context" id="capture-context">Browser meeting</span><time id="session-timer" datetime="PT0S">00:00</time><button class="toolbar-button audio-button" id="open-audio" data-i18n-title="audioControls" data-i18n-aria="audioControls" aria-label="Audio controls" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><path d="M16 5.5v5M9 13.5v5"/></svg></button></div>
       <div class="language-route"><div><span data-i18n="you">You</span><strong id="source-label">Russian</strong></div><svg viewBox="0 0 40 20" aria-hidden="true"><path d="M3 10h30m-6-6 6 6-6 6"/></svg><div class="align-right"><span data-i18n="participant">Participant</span><strong id="target-label">English</strong></div></div>
       <div class="pipeline" id="pipeline" aria-live="polite" hidden>
         <div class="pipeline-row"><span class="pipeline-side" data-i18n="toParticipant">You → participant</span><span class="pipeline-stage" id="pipeline-outgoing"><i></i><span>—</span></span></div>
@@ -45,13 +45,21 @@
       <button class="swap-languages" id="swap-languages" type="button" aria-label="Swap languages" data-i18n-aria="swapLanguages" title="Swap languages" data-i18n-title="swapLanguages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-3 3 3 3M4 10h13M17 17l3-3-3-3M20 14H7"/></svg></button>
       <div class="quick-setting"><label for="target-language" data-i18n="participantLanguage">Participant</label><select id="target-language"><option value="English" data-i18n="languageEnglish">English</option><option value="Russian" data-i18n="languageRussian">Russian</option><option value="Spanish" data-i18n="languageSpanish">Spanish</option><option value="German" data-i18n="languageGerman">German</option><option value="French" data-i18n="languageFrench">French</option><option value="Brazilian Portuguese" data-i18n="languagePortuguese">Brazilian Portuguese</option></select></div>
       <div class="quick-setting" hidden><label for="outgoing-device" data-i18n="outputParticipant">To meeting</label><select id="outgoing-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
-      <div class="quick-setting"><label for="incoming-device" data-i18n="outputYou">For you</label><select id="incoming-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
     </section>
 
     <section class="preflight" aria-label="System readiness" data-i18n-aria="settingsTitle"><div data-check="api"><i></i><span>OpenAI</span><small data-i18n="connecting">Connecting</small></div><div data-check="microphone"><i></i><span data-i18n="microphone">Microphone</span><small data-i18n="connecting">Connecting</small></div><div data-check="route"><i></i><span data-i18n="route">Route</span><small data-i18n="connecting">Connecting</small></div></section>
     <div class="notice" id="recording-notice" hidden><p data-i18n="notice">To translate or transcribe, meeting audio is sent securely to OpenAI. History stays local.</p><button id="accept-notice" data-i18n="understood">Got it</button></div>
     <div class="error-callout" id="error" role="alert" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3.5v.1M10.3 3.6 2.5 17.1A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.9L13.7 3.6a2 2 0 0 0-3.4 0Z"/></svg><span id="error-copy"></span><button id="error-settings" data-i18n="fix">Fix</button></div>
     <button class="session-button" id="toggle"><span class="button-symbol"><svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z"/></svg></span><span id="toggle-label">Start translation</span><span class="button-progress" aria-hidden="true"></span></button>
+    </div>
+    <div class="modal" id="audio-modal" role="dialog" aria-modal="true" data-i18n-aria="audioControls" aria-label="Audio controls" hidden>
+      <div class="modal-card">
+        <header class="modal-header">
+          <strong data-i18n="audioControls">Audio controls</strong>
+          <button type="button" class="toolbar-button" id="close-audio" data-i18n-aria="close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        </header>
+        <div class="modal-body">
+          <div class="quick-setting"><label for="incoming-device" data-i18n="outputYou">For you</label><select id="incoming-device"><option value="default" data-i18n="systemOutput">System output</option></select></div>
     <div class="session-controls" id="session-controls" role="group" aria-label="Session controls" data-i18n-aria="sessionControls">
       <div class="mute-row" id="mute-row-outgoing">
         <span class="mute-row-label" data-i18n="toParticipant">You → participant</span>
@@ -140,6 +148,8 @@
         </details>
       </div>
     </div>
+        </div>
+      </div>
     </div>
     <section class="live-transcript" id="live-transcript" aria-label="Live transcript" data-i18n-aria="liveTranscript">
       <div class="transcript-column">
