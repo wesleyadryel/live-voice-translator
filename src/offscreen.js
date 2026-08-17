@@ -25,6 +25,20 @@ let liveTranscript = [];
 // instead of stacking half-sentences.
 const pendingSourceLines = new Map();
 let transcriptNotifyTimer = null;
+// Replaying a line is a one-off spoken message rather than a stream, so it is
+// synthesised on demand. The mini model is the cheap one and this runs by hand, once
+// per line the user chooses.
+// tts-1 is the low-latency voice of the three: this is a repair for a line the
+// interpreter missed, and it is worth more said quickly than said beautifully.
+const REPLAY_TTS_MODEL = "tts-1";
+const REPLAY_TTS_VOICE = "alloy";
+const REPLAY_SAMPLE_RATE = 24000;
+let replayFeedPc = null;
+let replayContext = null;
+let replayDestination = null;
+let replayReader = null;
+let replaySources = [];
+let replayContexts = [];
 let activeSettings = { ...DEFAULT_SETTINGS };
 let sessionStartedAt = 0;
 let sessionTimer = null;
@@ -145,6 +159,153 @@ async function startReturnFeed() {
   } catch (error) {
     if (returnFeedPc === pc) stopReturnFeed();
   }
+}
+
+// Speaking a line again is a spoken message, so it has to arrive where the interpreter's
+// voice arrives. With a virtual cable that is an output device and playing it is enough;
+// in a browser conference the outgoing microphone is a track the page holds, so the
+// audio is carried into the tab over a loopback and mixed into what is transmitted.
+function stopReplayFeed() {
+  replayFeedPc?.close();
+  replayFeedPc = null;
+  chrome.runtime.sendMessage({ type: "REPLAY_FEED_STOP" }).catch(() => {});
+}
+
+// One connection for the whole session: it carries a destination node that is silent
+// until a line is played, so renegotiating per replay would only add delay.
+async function ensureReplayFeed() {
+  if (replayFeedPc) return true;
+  if (!replayContext) {
+    replayContext = new AudioContext({ sampleRate: REPLAY_SAMPLE_RATE });
+    replayDestination = replayContext.createMediaStreamDestination();
+  }
+  await replayContext.resume().catch(() => {});
+  const pc = new RTCPeerConnection();
+  replayFeedPc = pc;
+  try {
+    for (const track of replayDestination.stream.getAudioTracks()) pc.addTrack(track, replayDestination.stream);
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIceGathering(pc);
+    const result = await chrome.runtime.sendMessage({ type: "REPLAY_FEED_OFFER", sdp: pc.localDescription.sdp });
+    if (!result?.ok || !result.answerSdp) throw new Error(result?.error || "REPLAY_FEED_FAILED");
+    if (replayFeedPc !== pc) return false;
+    await pc.setRemoteDescription({ type: "answer", sdp: result.answerSdp });
+    return true;
+  } catch {
+    if (replayFeedPc === pc) stopReplayFeed();
+    return false;
+  }
+}
+
+async function requestSpeech(text) {
+  const settings = activeSettings;
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${settings.apiKey}`, "Content-Type": "application/json" },
+    // Raw samples rather than a container: nothing has to be decoded before the first
+    // of them can be heard, and the endpoint sends them as they are generated.
+    body: JSON.stringify({ model: REPLAY_TTS_MODEL, voice: REPLAY_TTS_VOICE, input: text.slice(0, 2000), response_format: "pcm" })
+  });
+  if (!response.ok) throw new Error(`OpenAI ${response.status}`);
+  if (!response.body) throw new Error("SPEECH_STREAM_MISSING");
+  return response;
+}
+
+// A chunk boundary can fall inside a sample, so the odd trailing byte waits for the
+// bytes that complete it.
+function decodePcm(bytes, carry) {
+  const joined = carry?.length ? (() => {
+    const merged = new Uint8Array(carry.length + bytes.length);
+    merged.set(carry);
+    merged.set(bytes, carry.length);
+    return merged;
+  })() : bytes;
+  const usable = joined.length - (joined.length % 2);
+  const view = new DataView(joined.buffer, joined.byteOffset, usable);
+  const samples = new Float32Array(usable / 2);
+  for (let index = 0; index < samples.length; index += 1) samples[index] = view.getInt16(index * 2, true) / 32768;
+  return { samples, carry: joined.slice(usable) };
+}
+
+// Each context plays on its own device, and each keeps its own clock: chunks are
+// queued back to back from a small lead, so playback starts on the first one and the
+// rest arrive before the previous has finished.
+function scheduleSamples(sink, samples) {
+  if (!samples.length) return;
+  const buffer = sink.context.createBuffer(1, samples.length, REPLAY_SAMPLE_RATE);
+  buffer.copyToChannel(samples, 0);
+  const source = sink.context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(sink.destination || sink.context.destination);
+  sink.nextTime = Math.max(sink.nextTime, sink.context.currentTime + 0.08);
+  source.start(sink.nextTime);
+  sink.nextTime += buffer.duration;
+  replaySources.push(source);
+}
+
+async function replayContextFor(deviceId) {
+  const context = new AudioContext({ sampleRate: REPLAY_SAMPLE_RATE });
+  // Playing on the meeting's own output is what the other side hears; an unsupported
+  // sink is not worth failing over, it just plays where the system plays.
+  if (deviceId && deviceId !== "default" && context.setSinkId) await context.setSinkId(deviceId).catch(() => {});
+  await context.resume().catch(() => {});
+  return context;
+}
+
+async function replayLine(text) {
+  if (!text || !activeSettings.apiKey) throw new Error(tr(activeSettings, "addApiKey"));
+  stopReplay();
+  const startedAt = Date.now();
+  const settings = activeSettings;
+  // The sinks are prepared while the request is in flight, so the first samples find
+  // somewhere to go the moment they land.
+  const [response, monitorContext, outgoingContext] = await Promise.all([
+    requestSpeech(text),
+    replayContextFor(settings.incomingDeviceId),
+    settings.webRtcOutgoing ? null : replayContextFor(settings.outgoingDeviceId)
+  ]);
+  console.info("[LiveVoice] replay first byte", Date.now() - startedAt, "ms");
+  // You always hear it: this is the line you chose to repeat, and hearing it is how
+  // you know the other side did.
+  const sinks = [{ context: monitorContext, nextTime: 0 }];
+  if (outgoingContext) {
+    // The outgoing sink is the virtual cable the meeting listens to as a microphone.
+    sinks.push({ context: outgoingContext, nextTime: 0 });
+  } else if (await ensureReplayFeed()) {
+    sinks.push({ context: replayContext, destination: replayDestination, nextTime: 0 });
+  }
+  replayContexts = sinks.map((sink) => sink.context).filter((context) => context !== replayContext);
+  const reader = response.body.getReader();
+  replayReader = reader;
+  let carry = null;
+  let first = true;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done || replayReader !== reader) break;
+    const decoded = decodePcm(value, carry);
+    carry = decoded.carry;
+    for (const sink of sinks) scheduleSamples(sink, decoded.samples);
+    if (first && decoded.samples.length) {
+      console.info("[LiveVoice] replay audio starts", Date.now() - startedAt, "ms");
+      first = false;
+    }
+  }
+  return { ok: true };
+}
+
+function stopReplay() {
+  replayReader?.cancel().catch(() => {});
+  replayReader = null;
+  for (const source of replaySources) {
+    try { source.stop(); } catch {}
+    try { source.disconnect(); } catch {}
+  }
+  replaySources = [];
+  // The loopback context is the session's own and stays; the ones opened for this
+  // replay are closed with it, or a call spent repeating lines would leave an audio
+  // context behind for each one.
+  for (const context of replayContexts) context.close().catch(() => {});
+  replayContexts = [];
 }
 
 function applyReturnFeed() {
@@ -493,6 +654,8 @@ async function stop({ reason = "user", notify = false, error = "", persist = tru
   settlePendingSourceLines();
   stopMonitorFeed();
   stopReturnFeed();
+  stopReplay();
+  stopReplayFeed();
   releaseSpeechGates();
   releaseAudioStages();
   clearLifecycleTimers();
@@ -870,6 +1033,9 @@ async function start(suppliedSettings = {}) {
     await connectPair(settings, mode);
     // The gate runs on every eligible side, parked or not: it is what notices the
     // speech that brings a parked session back.
+    // Negotiated with the call rather than with the first replay: an SDP round trip in
+    // front of a line the user already pressed play on is the whole delay again.
+    if (settings.webRtcOutgoing) ensureReplayFeed().catch(() => {});
     if (outgoingInterpreterEligible(settings)) setupSpeechGate("outgoing", outgoingStage?.analyser || microphoneInput);
     setupSpeechGate("incoming", incomingStage?.analyser || tabInput);
     state.phase = "live";
@@ -892,6 +1058,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "ADD_USAGE") {
     recordUsage(message.usage || {});
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === "REPLAY_LINE") {
+    replayLine(String(message.text || "")).then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message.type === "REPLAY_STOP") {
+    stopReplay();
     sendResponse({ ok: true });
     return false;
   }

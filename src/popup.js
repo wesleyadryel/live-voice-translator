@@ -48,6 +48,9 @@ let pretranslating = false;
 // Lines currently reading as their translation. Survives the feed being rebuilt, which
 // happens on every new word spoken.
 const shownTranslations = new Set();
+// The line whose audio was just handed to the offscreen document, so its button reads
+// as busy rather than inviting a second press.
+let speakingLineId = "";
 let gainAdjusting = false;
 const MUTE_KEYS = ["outgoingInterpreterOff", "outgoingTranslationMuted", "outgoingOriginalOn", "outgoingMonitorOn", "outgoingMuted", "incomingInterpreterOff", "incomingTranslationMuted", "incomingOriginalOn", "incomingReturnOn", "incomingMuted"];
 let mutes = Object.fromEntries(MUTE_KEYS.map((key) => [key, false]));
@@ -322,21 +325,40 @@ function render(state = currentState) {
 // another script — so it needs no label to be read as "show this in the other language".
 const TRANSLATE_ICON = "M12.87 15.07 10.33 12.56l.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04ZM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12Zm-2.62 7 1.62-4.33L19.12 17h-3.24Z";
 
-function translateButton(item, showing) {
+// A speaker with sound coming out of it: the line is about to be said out loud, to
+// both sides of the call.
+const SPEAK_ICON = "M11 5.4 6.6 9H3.8v6h2.8L11 18.6V5.4Z M15.4 9.4a3.7 3.7 0 0 1 0 5.2 M18.2 6.6a7.6 7.6 0 0 1 0 10.8";
+
+function lineButton(className, iconPath, title, pressed) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "translate-toggle";
-  button.dataset.translate = item.id;
-  button.setAttribute("aria-pressed", String(showing));
-  button.title = t(locale, showing ? "showOriginal" : "showTranslation");
-  button.setAttribute("aria-label", button.title);
+  button.className = className;
+  button.setAttribute("aria-pressed", String(pressed));
+  button.title = title;
+  button.setAttribute("aria-label", title);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", TRANSLATE_ICON);
+  path.setAttribute("d", iconPath);
   svg.append(path);
   button.append(svg);
+  return button;
+}
+
+// Only on the spoken column, and only there on purpose: this is the repair for an
+// utterance the interpreter never voiced, said again in whichever language the line is
+// currently reading.
+function speakButton(item) {
+  const speaking = speakingLineId === item.id;
+  const button = lineButton("speak-line", SPEAK_ICON, t(locale, speaking ? "stopSpeaking" : "speakLine"), speaking);
+  button.dataset.speak = item.id;
+  return button;
+}
+
+function translateButton(item, showing) {
+  const button = lineButton("translate-toggle", TRANSLATE_ICON, t(locale, showing ? "showOriginal" : "showTranslation"), showing);
+  button.dataset.translate = item.id;
   return button;
 }
 
@@ -369,9 +391,17 @@ function fillFeed(feed, empty, items) {
     const translation = lineTranslations.get(item.id);
     copy.textContent = showing ? translation || t(locale, "translating") : item.text;
     if (showing) line.classList.add("is-translated");
-    meta.append(speaker, time);
-    // A line still being spoken has no settled text to translate yet.
-    if (!item.pending) meta.append(translateButton(item, showing));
+    // Timestamp and buttons travel as one group on the right; loose in the header they
+    // would be spread apart by the same rule that pushes the speaker to the left.
+    const actions = document.createElement("div");
+    actions.className = "line-actions";
+    actions.append(time);
+    // A line still being spoken has no settled text to translate or say again.
+    if (!item.pending) {
+      if (item.kind === "source") actions.append(speakButton(item));
+      actions.append(translateButton(item, showing));
+    }
+    meta.append(speaker, actions);
     line.append(meta, copy);
     feed.append(line);
   }
@@ -458,6 +488,29 @@ async function ensureLocalTranslation() {
   ]).catch(() => []);
   localTranslationReady = ready.some(Boolean);
   return localTranslationReady;
+}
+
+// Says the line out loud on both sides of the call: the participant hears it where the
+// interpreter's voice normally arrives, and so do you. What is spoken is what the line
+// currently reads, so pressing translate first sends it in the other language.
+async function speakLine(id) {
+  if (speakingLineId === id) {
+    speakingLineId = "";
+    repaintTranscript();
+    await chrome.runtime.sendMessage({ type: "REPLAY_STOP" }).catch(() => {});
+    return;
+  }
+  const item = liveTranscript.find((entry) => entry.id === id);
+  if (!item || item.pending) return;
+  const text = shownTranslations.has(id) ? lineTranslations.get(id) || item.text : item.text;
+  speakingLineId = id;
+  repaintTranscript();
+  const result = await chrome.runtime.sendMessage({ type: "REPLAY_LINE", text }).catch(() => null);
+  // Synthesis is one request and playback is short, so the button goes back to rest as
+  // soon as the audio has been handed over rather than tracking it to the last word.
+  if (speakingLineId === id) speakingLineId = "";
+  repaintTranscript();
+  if (result && result.ok === false) actionError = friendlyError(new Error(result.error || ""));
 }
 
 async function toggleLineTranslation(id) {
@@ -730,8 +783,13 @@ async function syncTranscript() {
 }
 
 elements.transcript.addEventListener("click", (event) => {
-  const button = event.target.closest?.(".translate-toggle");
-  if (button) toggleLineTranslation(button.dataset.translate).catch(() => {});
+  const translate = event.target.closest?.(".translate-toggle");
+  if (translate) {
+    toggleLineTranslation(translate.dataset.translate).catch(() => {});
+    return;
+  }
+  const speak = event.target.closest?.(".speak-line");
+  if (speak) speakLine(speak.dataset.speak).catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message) => {

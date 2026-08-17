@@ -22,6 +22,8 @@ let monitorOn = false;
 let monitorPc = null;
 let returnPc = null;
 let returnElement = null;
+let replayPc = null;
+let replayElement = null;
 let speechGate = null;
 let idleTimer = null;
 let idleParked = false;
@@ -314,7 +316,45 @@ async function acceptReturnFeed(sdp) {
   return { ok: true, answerSdp: pc.localDescription.sdp };
 }
 
+// A line the user chose to speak again, synthesised in the offscreen document and
+// carried here so the bridge can fold it into what the sender transmits. Same shape as
+// the return feed, and muted locally for the same reason: the offscreen document is
+// already playing it for the user.
+const REPLAY_ELEMENT_ID = "live-voice-replay-output";
+
+function stopReplayFeed() {
+  replayPc?.close();
+  replayPc = null;
+  replayElement?.remove();
+  replayElement = null;
+  dispatch("live-voice:replay-track", { elementId: null });
+}
+
+async function acceptReplayFeed(sdp) {
+  stopReplayFeed();
+  const pc = new RTCPeerConnection();
+  replayPc = pc;
+  pc.ontrack = (event) => {
+    const audio = document.createElement("audio");
+    audio.id = REPLAY_ELEMENT_ID;
+    audio.autoplay = true;
+    audio.muted = true;
+    audio.hidden = true;
+    audio.srcObject = event.streams[0];
+    (document.documentElement || document.body).append(audio);
+    replayElement?.remove();
+    replayElement = audio;
+    dispatch("live-voice:replay-track", { elementId: REPLAY_ELEMENT_ID });
+  };
+  await pc.setRemoteDescription({ type: "offer", sdp });
+  await pc.setLocalDescription(await pc.createAnswer());
+  await waitForIceGathering(pc);
+  return { ok: true, answerSdp: pc.localDescription.sdp };
+}
+
 export async function handleConferenceMessage(message) {
+  if (message.type === "CONFERENCE_REPLAY_OFFER") return acceptReplayFeed(message.sdp);
+  if (message.type === "CONFERENCE_REPLAY_STOP") { stopReplayFeed(); return { ok: true }; }
   if (message.type === "CONFERENCE_RETURN_OFFER") return acceptReturnFeed(message.sdp);
   if (message.type === "CONFERENCE_RETURN_STOP") { stopReturnFeed(); return { ok: true }; }
   if (message.type === "CONFERENCE_START_OUTGOING") return startOutgoing(message.settings || {});

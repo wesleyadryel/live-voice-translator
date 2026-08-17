@@ -171,6 +171,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // A replayed line has to reach the meeting the same way the interpreter's voice
+  // does, which in a browser conference means the tab that holds the outgoing track.
+  if (message.type === "REPLAY_FEED_OFFER") {
+    (async () => {
+      if (!activeConferenceTabId) throw new Error("CONFERENCE_SESSION_NOT_ACTIVE");
+      sendResponse(await chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_REPLAY_OFFER", sdp: message.sdp }));
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "REPLAY_FEED_STOP") {
+    if (activeConferenceTabId) chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_REPLAY_STOP" }).catch(() => {});
+    return false;
+  }
+
+  if (message.type === "REPLAY_LINE" || message.type === "REPLAY_STOP") {
+    (async () => {
+      await ensureOffscreenDocument();
+      sendResponse(await chrome.runtime.sendMessage({ target: "offscreen", type: message.type, text: message.text }));
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (message.type === "RETURN_FEED_STOP") {
     if (activeConferenceTabId) chrome.tabs.sendMessage(activeConferenceTabId, { type: "CONFERENCE_RETURN_STOP" }).catch(() => {});
     return false;

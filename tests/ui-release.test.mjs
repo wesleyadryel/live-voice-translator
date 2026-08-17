@@ -163,8 +163,21 @@ assert.match(localTranslatorJs, /Translator\.availability/, "availability must b
 // The line reads either as it was said or as it means, swapped in place by a button on
 // the line itself. That press is also the gesture Chrome requires before it will fetch
 // a language pack, which is why the download hangs off it.
-assert.match(popupJs, /className = "translate-toggle"/, "every finished line must carry its own translate button");
-assert.match(popupJs, /toggleLineTranslation\(button\.dataset\.translate\)/, "pressing it must swap that line");
+assert.match(popupJs, /lineButton\("translate-toggle"/, "every finished line must carry its own translate button");
+// A line the interpreter never voiced can be said again by hand, and it has to arrive
+// where the interpreter's voice arrives — the meeting, not just this machine.
+assert.match(popupJs, /lineButton\("speak-line"/, "spoken lines must carry a button that says them out loud");
+assert.match(popupJs, /item\.kind === "source"/, "only the spoken column repairs a missed utterance");
+assert.match(offscreenJs, /replayContextFor\(settings\.outgoingDeviceId\)/, "a replayed line must leave through the meeting's own route");
+assert.match(offscreenJs, /REPLAY_FEED_OFFER/, "a browser conference must receive the replay over the tab loopback");
+// Waiting for the whole file, or for an SDP round trip, puts the delay this feature
+// repairs back in front of it.
+assert.match(offscreenJs, /response_format: "pcm"/, "a replayed line must not wait to be decoded");
+assert.match(offscreenJs, /scheduleSamples\(sink, decoded\.samples\)/, "a replayed line must start playing on its first chunk");
+assert.match(offscreenJs, /if \(settings\.webRtcOutgoing\) ensureReplayFeed\(\)/, "the replay loopback must be negotiated with the call");
+assert.match(contentModuleJs, /live-voice:replay-track/, "the tab must hand the replay audio to the outgoing bridge");
+assert.match(popupJs, /toggleLineTranslation\(translate\.dataset\.translate\)/, "pressing it must swap that line");
+assert.match(popupJs, /speakLine\(speak\.dataset\.speak\)/, "pressing the speaker must say that line");
 assert.match(popupJs, /if \(shownTranslations\.delete\(id\)\)/, "pressing it again must put the original back");
 assert.match(popupJs, /await ensureLocalTranslation\(\)/, "the first press must be allowed to fetch the language pack");
 assert.match(popupJs, /pretranslateLines\(\)/, "finished lines must be translated before they are asked for");

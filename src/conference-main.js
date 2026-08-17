@@ -11,6 +11,7 @@
   let translatedTrack = null;
   let originalMicTrack = null;
   let returnTrack = null;
+  let replayTrack = null;
   // translated: the participant hears the interpreter.
   // original: the participant hears the untranslated voice from this page's own mic.
   // both: the participant hears the original voice and the interpreter together.
@@ -26,7 +27,7 @@
   }
 
   function isBridgeTrack(track) {
-    return Boolean(track) && (track === translatedTrack || track === originalMicTrack || track === silenceTrack || track === mixTrack || track === returnTrack);
+    return Boolean(track) && (track === translatedTrack || track === originalMicTrack || track === silenceTrack || track === mixTrack || track === returnTrack || track === replayTrack);
   }
 
   function remember(sender, track = sender?.track) {
@@ -112,9 +113,14 @@
     return returnTrack?.readyState === "live" ? returnTrack : null;
   }
 
+  // A line the user asked to be spoken again. It rides along like the return feed, and
+  // for the same reason: it is meant for the participant, not for this page.
+  function liveReplayTrack() {
+    return replayTrack?.readyState === "live" ? replayTrack : null;
+  }
+
   async function withReturn(tracks, status) {
-    const extra = liveReturnTrack();
-    const all = extra ? [...tracks, extra] : tracks;
+    const all = [...tracks, liveReturnTrack(), liveReplayTrack()].filter(Boolean);
     if (all.length > 1) return applyReplacement(buildMixTrack(all), status);
     if (all.length === 1) return applyReplacement(all[0], status);
     return applyReplacement(ensureSilenceTrack());
@@ -176,6 +182,7 @@
     translatedTrack = null;
     originalMicTrack = null;
     returnTrack = null;
+    replayTrack = null;
     outgoingMode = "translated";
     const restores = [];
     for (const [sender, track] of originalTracks) {
@@ -286,6 +293,10 @@
   window.addEventListener("live-voice:activate", () => activate().catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:translated-track", (event) => useTranslatedTrack(event.detail?.elementId).catch((error) => report("error", error.message)));
   window.addEventListener("live-voice:original-track", (event) => useOriginalTrack(event.detail?.elementId).catch((error) => report("error", error.message)));
+  window.addEventListener("live-voice:replay-track", (event) => {
+    replayTrack = event.detail?.elementId ? trackFromElement(event.detail.elementId) : null;
+    applyOutgoingMode().catch((error) => report("error", error.message));
+  });
   window.addEventListener("live-voice:return-track", (event) => {
     returnTrack = event.detail?.elementId ? trackFromElement(event.detail.elementId) : null;
     applyOutgoingMode().catch((error) => report("error", error.message));
