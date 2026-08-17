@@ -218,6 +218,10 @@ assert.match(manifestText, /speech-gate-processor\.js/, "the worklet must be rea
 // A silent interpreter is either working or stuck, and the panel has to say which.
 assert.match(realtimeJs, /ACTIVITY_BY_EVENT\[event\.type\]/, "each stage of the round trip must be reported");
 assert.match(popupJs, /renderPipeline\(\)/, "the panel must show the stage each direction is on");
+// `level` animates height — it draws the bars of the empty state. On the status dot it
+// stretched the row and pushed the panel down four times a second.
+assert.equal(/\.pipeline-stage\[[^\]]*\] i \{[^}]*animation: level/.test(releaseCss), false, "the status dot must not animate its own height");
+assert.match(releaseCss, /@keyframes stage-pulse \{[^}]*opacity/, "it must pulse on something that does not affect layout");
 // A refresh a second must not repaint what has not changed: rebuilding the feed or
 // rewriting every label is seen as the panel flickering.
 assert.equal(/feed\.replaceChildren\(\);/.test(popupJs), false, "the transcript must be updated in place, not rebuilt");
