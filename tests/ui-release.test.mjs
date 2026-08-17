@@ -98,7 +98,11 @@ assert.match(offscreenJs, /if \(meeting\) meeting\.transcript\.push\(item\)/, "o
 assert.match(releaseCss, /height: calc\(100dvh - 16px\)/, "the side panel must have a fixed viewport-sized workspace");
 // The spoken words are only useful if they can be read against the translation, which
 // takes a second column and the width to put it in.
-assert.match(releaseCss, /width: min\(calc\(100% - 16px\), 920px\)/, "the panel must be able to grow wide enough for two columns");
+assert.match(releaseCss, /width: min\(calc\(100% - 16px\), 1180px\)/, "the panel must be able to grow wide enough for two columns");
+// Wide panel: the controls take a column of their own and the conversation takes the
+// rest, full height, instead of sitting under a screen of settings.
+assert.match(releaseCss, /grid-template-columns: minmax\(280px, 360px\) minmax\(0, 1fr\)/, "a wide panel must put the controls beside the transcript");
+assert.match(popup, /<div class="panel-controls">/, "the controls must be one block the layout can move as a whole");
 assert.match(releaseCss, /grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/, "a wide panel must place the two transcripts side by side");
 assert.match(popup, /id="source-feed"/, "the spoken words must have their own feed");
 assert.match(popupJs, /liveTranscript\.filter\(\(item\) => item\.kind === "source"\)/, "the panel must split the two kinds of transcript line");

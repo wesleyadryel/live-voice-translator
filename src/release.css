@@ -45,10 +45,11 @@ body.panel-shell {
 .control-panel {
   display: flex;
   flex-direction: column;
-  /* Wide enough for the transcript to run as two columns — the translation beside the
-     words that were actually spoken. The side panel is sized by dragging its edge, so
-     this is a ceiling the panel grows into, not a width it forces. */
-  width: min(calc(100% - 16px), 920px);
+  /* Wide enough for the controls to sit beside the transcript, and for the transcript
+     itself to run as two columns — the translation beside the words that were actually
+     spoken. The side panel is sized by dragging its edge, so this is a ceiling the
+     panel grows into, not a width it forces. */
+  width: min(calc(100% - 16px), 1180px);
   height: calc(100dvh - 16px);
   min-height: 0;
   margin: 8px auto;
@@ -77,6 +78,36 @@ body.panel-shell {
    own height and the panel scrolls. The transcript re-states its own flex further
    down, which is what keeps it the one that stretches. */
 .control-panel > * { flex: none; }
+/* Narrow: one column, controls above the transcript, exactly as the panel has always
+   read. Wide: the controls take a fixed column on the left and the transcript takes
+   everything left over, full height, so a meeting can be read without scrolling past
+   the settings. */
+.panel-body { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+/* The controls keep their own height and let the panel scroll, exactly as they did
+   when they were the panel's own children. Without this the whole block becomes one
+   shrinkable flex item and every section inside it is squashed at once. */
+.panel-controls { display: flex; flex: none; flex-direction: column; min-height: 0; }
+.panel-controls > * { flex: none; }
+@media (min-width: 900px) {
+  .panel-body {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+  /* Each column scrolls on its own: the tuning sliders are long, and reaching them
+     should not push the conversation off the screen. Here the block does take the
+     height of its column, so it may shrink — and scroll — instead of running past it. */
+  .panel-controls {
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(113,135,169,.28) transparent;
+  }
+  .panel-body > .live-transcript { height: 100%; margin-top: 0; }
+}
 
 .mac-toolbar {
   display: flex;
@@ -470,7 +501,10 @@ body.panel-shell {
    the single feed it always was. */
 .live-transcript[data-columns="1"] { grid-template-rows: 1fr; }
 .live-transcript[data-columns="1"] .is-source-column { display: none; }
-@media (min-width: 700px) {
+/* Two feeds side by side need room of their own. Below 900px the transcript has the
+   panel's full width and 700px is enough; above it the controls have taken a column,
+   so the split waits until what is left is still worth splitting. */
+@media (min-width: 700px) and (max-width: 899px), (min-width: 1150px) {
   .live-transcript { grid-template-rows: none; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .live-transcript[data-columns="1"] { grid-template-columns: 1fr; }
   .transcript-column + .transcript-column { border-top: 0; border-left: 1px solid rgba(130,151,184,.2); }
